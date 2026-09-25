@@ -1,4 +1,4 @@
-import JevCore
+import DownshiftCore
 
 /// Content allowed for `state`, `instructions` and criteria values by the Jev request schema:
 /// a string, an object of any JSON, an array of any JSON, or null. Bare numbers and booleans
@@ -201,7 +201,7 @@ public struct SystemOneResult: Sendable, Hashable {
     public var answers: [String: JevAnswer]
     public var inputTokens: Int
     public var outputTokens: Int
-    /// The validated JSON, for `jev explain`.
+    /// The validated JSON.
     public var json: JSONValue
 
     public init(json: JSONValue) throws {

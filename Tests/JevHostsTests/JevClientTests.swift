@@ -2,7 +2,7 @@ import AsyncHTTPClient
 import Foundation
 import Hummingbird
 import HummingbirdTesting
-import JevCore
+import DownshiftCore
 import NIOCore
 import Testing
 @testable import JevHosts

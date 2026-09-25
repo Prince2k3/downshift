@@ -1,4 +1,4 @@
-import JevCore
+import DownshiftCore
 
 /// The Jev question set: one exact-model choice plus three complexity scores.
 /// Ported from `config.mjs` (`QUESTIONS`, `GUIDANCE`, `questionForModels`) and the request

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import JevCore
+@testable import DownshiftCore
 @testable import JevHosts
 
 @Suite struct JevRequestSchemaTests {

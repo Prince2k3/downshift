@@ -1,4 +1,4 @@
-import JevCore
+import DownshiftCore
 
 /// One route to Jev: where to send a systemOne request, how to authenticate, and how the host
 /// wraps the request and response. Jev itself is the same everywhere, so hosts differ only here.
@@ -57,7 +57,7 @@ public struct JevHost: Sendable, Hashable {
             ("authorization", "Bearer \(apiKey)"),
             ("content-type", "application/json"),
             ("accept", "application/json"),
-            ("user-agent", "jev-router"),
+            ("user-agent", "downshift"),
         ]
         switch format {
         case .systemOne:

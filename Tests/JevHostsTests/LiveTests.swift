@@ -1,13 +1,13 @@
 import Foundation
-import JevCore
+import DownshiftCore
 import Testing
 @testable import JevHosts
 
-/// Real calls to every configured host. Off unless JEV_LIVE=1; they spend a little credit.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["JEV_LIVE"] == "1"))
+/// Real calls to every configured host. Off unless DSHIFT_LIVE=1; they spend a little credit.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["DSHIFT_LIVE"] == "1"))
 struct LiveHostTests {
     @Test func everyConfiguredHostAnswersWithinTheSchema() async throws {
-        let environment = JevEnvironment.load()
+        let environment = DownshiftEnvironment.load()
         let hosts = HostPresets.all.compactMap { try? HostPresets.host($0.id, environment: environment).get() }
         try #require(!hosts.isEmpty, "no host credentials configured")
         for host in hosts {

@@ -1,6 +1,6 @@
 import AsyncHTTPClient
 import Foundation
-import JevCore
+import DownshiftCore
 import NIOCore
 
 /// Asks Jev through one or more hosts, within a hard deadline. It never throws: any failure
@@ -41,13 +41,13 @@ public struct JevClient: Sendable {
     public let hosts: [JevHost]
     let http: HTTPClient
     let timing: Timing
-    let log: JevLog?
-    /// Keep each reply body on its attempt, for `jev hosts test`. Never set this in `serve`:
+    let log: DownshiftLog?
+    /// Keep each reply body on its attempt, for `dshift hosts test`. Never set this in `serve`:
     /// replies can quote the prompt.
     let keepReplies: Bool
 
     public init(hosts: [JevHost], http: HTTPClient = JevClient.sharedHTTPClient, timing: Timing = Timing(),
-                log: JevLog? = nil, keepReplies: Bool = false) {
+                log: DownshiftLog? = nil, keepReplies: Bool = false) {
         self.hosts = hosts
         self.http = http
         self.timing = timing
@@ -154,7 +154,7 @@ public struct JevOutcome: Sendable {
         public var reason: String
         public var status: Int?
         /// The host's error text or the schema violations. It is not prompt text, but it can
-        /// quote the request, so it is shown by `jev hosts test` and never written to logs.
+        /// quote the request, so it is shown by `dshift hosts test` and never written to logs.
         public var message: String?
         public var retryable: Bool
         public var milliseconds: Int

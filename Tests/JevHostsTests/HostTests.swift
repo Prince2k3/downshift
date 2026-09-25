@@ -1,5 +1,5 @@
 import Foundation
-import JevCore
+import DownshiftCore
 import Testing
 @testable import JevHosts
 
@@ -138,7 +138,7 @@ enum Fixture {
 }
 
 @Suite struct HostPresetTests {
-    func env(_ values: [String: String]) -> JevEnvironment { JevEnvironment(values: values) }
+    func env(_ values: [String: String]) -> DownshiftEnvironment { DownshiftEnvironment(values: values) }
 
     @Test func nothingConfiguredMeansNoHost() {
         let resolution = HostPresets.resolve(environment: env([:]))
@@ -174,7 +174,7 @@ enum Fixture {
     }
 
     @Test func flagBeatsEnvironmentAndBuildsAFailoverChain() {
-        let values = ["JEV_HOST": "vercel", "AI_GATEWAY_API_KEY": "v", "OPENROUTER_API_KEY": "or", "JEV_API_KEY": "ts"]
+        let values = ["DSHIFT_HOST": "vercel", "AI_GATEWAY_API_KEY": "v", "OPENROUTER_API_KEY": "or", "DSHIFT_API_KEY": "ts"]
         let resolution = HostPresets.resolve(flag: "openrouter, typesafe,openrouter", environment: env(values))
         #expect(resolution.hosts.map(\.id) == ["openrouter", "typesafe"])
         #expect(resolution.source == "--host")
@@ -182,18 +182,18 @@ enum Fixture {
     }
 
     @Test func namedHostsWithoutCredentialsAreProblems() {
-        let resolution = HostPresets.resolve(environment: env(["JEV_HOST": "cloudflare,bogus,openrouter", "OPENROUTER_API_KEY": "or"]))
+        let resolution = HostPresets.resolve(environment: env(["DSHIFT_HOST": "cloudflare,bogus,openrouter", "OPENROUTER_API_KEY": "or"]))
         #expect(resolution.hosts.map(\.id) == ["openrouter"])
         #expect(resolution.problems.map(\.host) == ["cloudflare", "bogus"])
     }
 
     @Test func noneTurnsRoutingOff() {
-        #expect(HostPresets.resolve(environment: env(["JEV_HOST": "none", "OPENROUTER_API_KEY": "or"])).hosts.isEmpty)
+        #expect(HostPresets.resolve(environment: env(["DSHIFT_HOST": "none", "OPENROUTER_API_KEY": "or"])).hosts.isEmpty)
         #expect(HostPresets.resolve(flag: "off", environment: env(["OPENROUTER_API_KEY": "or"])).hosts.isEmpty)
     }
 
     @Test func legacyProviderVariableStillWorks() {
-        let resolution = HostPresets.resolve(environment: env(["JEV_PROVIDER": "typesafe", "TYPESAFE_API_KEY": "ts"]))
+        let resolution = HostPresets.resolve(environment: env(["DSHIFT_PROVIDER": "typesafe", "TYPESAFE_API_KEY": "ts"]))
         #expect(resolution.hosts.first?.url == "https://api.typesafe.ai/v1/systemone")
         #expect(resolution.hosts.first?.model == "jev-latest")
     }
@@ -207,22 +207,22 @@ enum Fixture {
         ("not a url", false),
     ])
     func customHostURLs(url: String, allowed: Bool) {
-        let result = HostPresets.host("custom", environment: env(["JEV_BASE_URL": url, "JEV_HOST_API_KEY": "k"]))
+        let result = HostPresets.host("custom", environment: env(["DSHIFT_BASE_URL": url, "DSHIFT_HOST_API_KEY": "k"]))
         #expect(((try? result.get()) != nil) == allowed)
     }
 
     @Test func customTransportMustBeKnown() throws {
-        let values = ["JEV_BASE_URL": "https://x.test/jev", "JEV_HOST_API_KEY": "k"]
+        let values = ["DSHIFT_BASE_URL": "https://x.test/jev", "DSHIFT_HOST_API_KEY": "k"]
         #expect(try HostPresets.host("custom", environment: env(values)).get().format == .systemOne)
-        #expect(try HostPresets.host("custom", environment: env(values.merging(["JEV_TRANSPORT": "vercel"]) { $1 })).get().format == .vercel)
+        #expect(try HostPresets.host("custom", environment: env(values.merging(["DSHIFT_TRANSPORT": "vercel"]) { $1 })).get().format == .vercel)
         #expect(throws: HostProblem.self) {
-            try HostPresets.host("custom", environment: env(values.merging(["JEV_TRANSPORT": "grpc"]) { $1 })).get()
+            try HostPresets.host("custom", environment: env(values.merging(["DSHIFT_TRANSPORT": "grpc"]) { $1 })).get()
         }
     }
 
     @Test func problemsNeverQuoteSecrets() {
         let secret = "sk-very-secret"
-        let values = ["CLOUDFLARE_API_TOKEN": secret, "CLOUDFLARE_ACCOUNT_ID": "bad/acct", "JEV_HOST": "cloudflare"]
+        let values = ["CLOUDFLARE_API_TOKEN": secret, "CLOUDFLARE_ACCOUNT_ID": "bad/acct", "DSHIFT_HOST": "cloudflare"]
         let resolution = HostPresets.resolve(environment: env(values))
         #expect(!resolution.problems.isEmpty)
         #expect(!resolution.problems.contains { $0.description.contains(secret) })

@@ -1,5 +1,5 @@
 import Foundation
-import JevCore
+import DownshiftCore
 
 /// One reason an instance does not satisfy a schema.
 public struct SchemaViolation: Sendable, Hashable, CustomStringConvertible {

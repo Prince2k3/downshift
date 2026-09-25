@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "jev-router",
+    name: "downshift",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "jev", targets: ["jev"]),
+        .executable(name: "dshift", targets: ["dshift"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
@@ -20,9 +20,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "jev",
+            name: "dshift",
             dependencies: [
-                "JevCore", "JevHosts", "JevProxy", "JevAgents", "JevLaunch",
+                "DownshiftCore", "JevHosts", "DownshiftProxy", "DownshiftAgents", "DownshiftLaunch",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -30,19 +30,19 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
-        .target(name: "JevCore"),
+        .target(name: "DownshiftCore"),
         .target(
             name: "JevHosts",
             dependencies: [
-                "JevCore",
+                "DownshiftCore",
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
                 .product(name: "NIOCore", package: "swift-nio"),
             ]
         ),
         .target(
-            name: "JevProxy",
+            name: "DownshiftProxy",
             dependencies: [
-                "JevCore", "JevHosts",
+                "DownshiftCore", "JevHosts",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"),
                 .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
@@ -57,44 +57,44 @@ let package = Package(
             ]
         ),
         .target(
-            name: "JevAgents",
+            name: "DownshiftAgents",
             dependencies: [
-                "JevCore",
+                "DownshiftCore",
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
         ),
         .target(
-            name: "JevLaunch",
+            name: "DownshiftLaunch",
             dependencies: [
-                "JevCore", "JevHosts", "JevProxy", "JevAgents",
+                "DownshiftCore", "JevHosts", "DownshiftProxy", "DownshiftAgents",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "UnixSignals", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
-        .testTarget(name: "JevCoreTests", dependencies: ["JevCore"]),
+        .testTarget(name: "DownshiftCoreTests", dependencies: ["DownshiftCore"]),
         .testTarget(
-            name: "JevLaunchTests",
+            name: "DownshiftLaunchTests",
             dependencies: [
-                "JevLaunch", "JevCore", "JevProxy", "JevAgents",
+                "DownshiftLaunch", "DownshiftCore", "DownshiftProxy", "DownshiftAgents",
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
-        .testTarget(name: "JevAgentsTests", dependencies: ["JevAgents", "JevCore"]),
+        .testTarget(name: "DownshiftAgentsTests", dependencies: ["DownshiftAgents", "DownshiftCore"]),
         .testTarget(
             name: "JevHostsTests",
             dependencies: [
-                "JevHosts", "JevCore",
+                "JevHosts", "DownshiftCore",
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
             ]
         ),
         .testTarget(
-            name: "JevProxyTests",
+            name: "DownshiftProxyTests",
             dependencies: [
-                "JevProxy", "JevCore", "JevHosts",
+                "DownshiftProxy", "DownshiftCore", "JevHosts",
                 .product(name: "HummingbirdTesting", package: "hummingbird"),
                 .product(name: "HummingbirdWSClient", package: "hummingbird-websocket"),
             ]
