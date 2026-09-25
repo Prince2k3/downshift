@@ -209,7 +209,11 @@ public struct AppsManager: Sendable {
 /// Checks whether something accepts TCP connections on 127.0.0.1:port.
 public enum ProxyProbe {
     public static func isListening(port: Int) -> Bool {
+        #if canImport(Glibc)
+        let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        #else
         let fd = socket(AF_INET, SOCK_STREAM, 0)
+        #endif
         guard fd >= 0 else { return false }
         defer { close(fd) }
         var address = sockaddr_in()
