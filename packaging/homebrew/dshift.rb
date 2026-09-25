@@ -4,7 +4,7 @@ class Dshift < Formula
   desc "Route each Claude Code and Codex prompt to the cheapest model that can handle it"
   homepage "https://github.com/Prince2k3/downshift"
   url "https://github.com/Prince2k3/downshift/archive/refs/tags/v0.4.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "c5c7cb216b1d676d7cf9a954177f86b435cc2d02c895242dbcddd6d54c7e682a"
   license "MIT"
   head "https://github.com/Prince2k3/downshift.git", branch: "main"
 
