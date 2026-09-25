@@ -37,7 +37,13 @@ public final class ChildProcess: Sendable {
     }
 
     public static func spawn(_ executable: String, arguments: [String], environment: [String: String]) throws -> ChildProcess {
+        #if canImport(Darwin)
         var attributes: posix_spawnattr_t?
+        var actions: posix_spawn_file_actions_t?
+        #else
+        var attributes = posix_spawnattr_t()
+        var actions = posix_spawn_file_actions_t()
+        #endif
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
         var all = sigset_t()
@@ -52,7 +58,6 @@ public final class ChildProcess: Sendable {
         #endif
         posix_spawnattr_setflags(&attributes, Int16(flags))
 
-        var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
         #if canImport(Darwin)

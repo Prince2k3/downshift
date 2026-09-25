@@ -189,9 +189,10 @@ func withFakeJev(
             let timing = JevClient.Timing(attemptTimeout: .seconds(5), retries: 3, deadline: .seconds(5))
             let client = JevClient(hosts: [host("a", url("a"))], http: http, timing: timing)
             let request = try Fixture.request()
-            let started = ContinuousClock.now
             let task = Task { await client.ask(request) }
-            try await Task.sleep(for: .milliseconds(100))
+            // Cancel once the call is in flight; a slow machine may take a while to send it.
+            for _ in 0..<100 where await fake.calls("a") == 0 { try await Task.sleep(for: .milliseconds(20)) }
+            let started = ContinuousClock.now
             task.cancel()
             let outcome = await task.value
             #expect(outcome.result == nil)
