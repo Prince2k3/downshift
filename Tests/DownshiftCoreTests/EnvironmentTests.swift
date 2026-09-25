@@ -146,6 +146,13 @@ struct StatusStoreTests {
         #expect(store.read(session: "/..") == nil)
     }
 
+    @Test func unknownAndEmptySessionsMissCleanly() {
+        #expect(store.read(session: "no-such-session") == nil)
+        #expect(store.file(for: "") == nil)
+        store.write(["tier": "strong"], session: "")
+        #expect(store.read(session: "") == nil)
+    }
+
     @Test func manualStatusReplacesTheDecision() {
         store.write(["tier": "fast"], session: "m")
         store.write(["manual": true], session: "m")

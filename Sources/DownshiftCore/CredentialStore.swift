@@ -56,7 +56,7 @@ public struct CredentialStore: Sendable {
         let add = SecItemAdd(item as CFDictionary, nil)
         guard add == errSecSuccess else { throw Self.failure(add, "save") }
         #else
-        throw Failure(description: "no keychain on this platform; use ~/.jev-router.env")
+        throw Failure(description: "no keychain on this platform; use ~/.downshift.env")
         #endif
     }
 

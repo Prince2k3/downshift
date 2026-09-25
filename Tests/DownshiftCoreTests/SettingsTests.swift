@@ -26,6 +26,17 @@ struct ClaudeSettingsTests {
         #expect(ClaudeSettings.savedModel(in: URL(fileURLWithPath: "/nonexistent/settings.json")) == nil)
     }
 
+    /// Sessions from before the rename saved the old sentinel; it is treated the same way.
+    @Test func theLegacySentinelIsNotASavedModel() throws {
+        #expect(ClaudeSettings.savedModel(in: try file(#"{"model": "jev-router"}"#)) == nil)
+        let restored = try file(#"{"model": "jev-router", "z": 1}"#)
+        #expect(ClaudeSettings.restoreSavedModel("opus", in: restored))
+        #expect(ClaudeSettings.savedModel(in: restored) == "opus")
+        let removed = try file(#"{"model": "jev-router"}"#)
+        #expect(ClaudeSettings.restoreSavedModel(nil, in: removed))
+        #expect(!(try contents(removed)).contains("model"))
+    }
+
     @Test func restoresThePreviousModelWhenTheSentinelWasSaved() throws {
         let url = try file("""
             {

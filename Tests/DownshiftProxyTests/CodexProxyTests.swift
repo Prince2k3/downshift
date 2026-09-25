@@ -149,6 +149,26 @@ func text(_ response: HTTPClientResponse) async throws -> String {
         }
     }
 
+    /// A tool-result continuation is the same turn: it keeps the routed model and doesn't ask Jev.
+    @Test func followUpsReuseTheRoutedModel() async throws {
+        let spy = RouterSpy(Self.answer)
+        let engine = RoutingEngine(adapter: CodexAdapter(), baseline: .balanced, available: Tier.allCases,
+                                   router: spy.router, store: nil)
+        try await withCodexProxy(engine: engine) { port, client, upstream in
+            var catalogRequest = HTTPClientRequest(url: "http://localhost:\(port)/codex/models?client_version=1")
+            for (name, value) in codexHeaders { catalogRequest.headers.add(name: name, value: value) }
+            _ = try await text(try await client.execute(catalogRequest, timeout: .seconds(10)))
+            _ = try await text(try await post(client, port: port, path: "/codex/responses",
+                                              codexTurn("debug this race"), headers: codexHeaders))
+            let followUp = #"{"model":"downshift","prompt_cache_key":"main","reasoning":{"effort":"medium"},"input":[{"type":"additional_tools","role":"developer","tools":[{}]},{"role":"user","content":[{"type":"input_text","text":"debug this race"}]},{"type":"function_call","call_id":"1","name":"shell","arguments":"{}"},{"type":"function_call_output","call_id":"1","output":"done"}]}"#
+            _ = try await text(try await post(client, port: port, path: "/codex/responses", followUp, headers: codexHeaders))
+            #expect(spy.requests.count == 1)
+            let seen = await upstream.seen
+            #expect(seen.count == 3)
+            #expect(seen.last?.body?["model"]?.stringValue == "gpt-5.6-sol")
+        }
+    }
+
     @Test func apiKeyRequestsGoToThePublicAPI() async throws {
         let engine = RoutingEngine(adapter: CodexAdapter(), baseline: .balanced, available: Tier.allCases,
                                    router: RouterSpy(Self.answer).router, store: nil)

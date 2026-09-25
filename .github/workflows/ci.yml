@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          swift build -c release
+          test "$(.build/release/dshift --version)" = "${GITHUB_REF_NAME#v}"
+
+  # Best effort: dshift is macOS-first (keychain, LaunchAgent, desktop apps).
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test
