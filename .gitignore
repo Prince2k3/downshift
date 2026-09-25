@@ -1,0 +1,9 @@
+.DS_Store
+/.build/
+/.swiftpm/
+/Packages/
+xcuserdata/
+DerivedData/
+*.xcodeproj
+# Captured traffic dumps hold private prompts and account data; never commit them.
+/Tests/Fixtures/
