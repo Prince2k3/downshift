@@ -60,9 +60,7 @@ public struct ClaudeModel: Sendable, Hashable {
 /// model is the user's own choice and passes straight through.
 public enum RouterModel {
     public static let id = "downshift"
-    /// The id before the rename, still honored so a saved setting or open session keeps routing.
-    public static let legacyID = "jev-router"
-    public static func isRouted(_ model: String?) -> Bool { model == id || model == legacyID }
+    public static func isRouted(_ model: String?) -> Bool { model == id }
 }
 
 /// Codex model ids per tier. Each can be replaced with `DSHIFT_CODEX_<TIER>_MODEL`.

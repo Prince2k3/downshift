@@ -1,7 +1,6 @@
 import Foundation
 
-/// A dotenv parser matching what Node's `process.loadEnvFile` accepted, so existing
-/// `~/.jev-router.env` files keep working:
+/// A dotenv parser matching what Node's `process.loadEnvFile` accepts:
 /// - `KEY=value`, with an optional `export ` prefix; blank lines and `#` comments are skipped.
 /// - Unquoted values are trimmed, and ` #` starts an inline comment.
 /// - `'…'`, `"…"` and `` `…` `` quotes may span lines; only double quotes expand `\n`.
@@ -44,10 +43,7 @@ public enum EnvFile {
 }
 
 /// The environment dshift runs with, where the first place a key is set wins:
-/// process env → the keychain (`dshift setup`) → `./.env` → `~/.downshift.env` → `~/.jev-router.env` →
-/// `~/.jev-claude.env` (legacy). The env files keep the Node launchers' precedence among themselves.
-/// Variables from before the rename (`JEV_HOST`, …) still count: in each place, `JEV_X` is read as
-/// `DSHIFT_X` unless that place also sets `DSHIFT_X`.
+/// process env → the keychain (`dshift setup`) → `./.env` → `~/.downshift.env`.
 public struct DownshiftEnvironment: Sendable {
     public var values: [String: String]
     /// The env files that existed and were read, in precedence order.
@@ -66,9 +62,7 @@ public struct DownshiftEnvironment: Sendable {
 
     public static func files(currentDirectory: URL, home: URL) -> [URL] {
         [currentDirectory.appendingPathComponent(".env"),
-         home.appendingPathComponent(".downshift.env"),
-         home.appendingPathComponent(".jev-router.env"),
-         home.appendingPathComponent(".jev-claude.env")]
+         home.appendingPathComponent(".downshift.env")]
     }
 
     public static func load(
@@ -83,12 +77,12 @@ public struct DownshiftEnvironment: Sendable {
 
     static func load(process: [String: String], currentDirectory: URL, home: URL,
                      stored: Result<[String: String], any Error>) -> DownshiftEnvironment {
-        var values = Dictionary(renamingLegacy(process), uniquingKeysWith: { first, _ in first })
+        var values = process
         var storedKeys: Set<String> = []
         var problem: String?
         switch stored {
         case .success(let stored):
-            for (key, value) in renamingLegacy(stored) where values[key] == nil {
+            for (key, value) in stored where values[key] == nil {
                 values[key] = value
                 storedKeys.insert(key)
             }
@@ -99,22 +93,11 @@ public struct DownshiftEnvironment: Sendable {
         for file in files(currentDirectory: currentDirectory, home: home) {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             loaded.append(file)
-            for (key, value) in renamingLegacy(EnvFile.parse(text)) where values[key] == nil { values[key] = value }
+            for (key, value) in EnvFile.parse(text) where values[key] == nil { values[key] = value }
         }
         return DownshiftEnvironment(values: values, loadedFiles: loaded, storedKeys: storedKeys, credentialProblem: problem)
     }
 
-    /// One place's variables with the pre-rename `JEV_` prefix read as `DSHIFT_`; a `DSHIFT_`
-    /// variable set in the same place wins. (`*_JEV` suffixes name the Jev AI and stay as they are.)
-    static func renamingLegacy(_ pairs: some Sequence<(key: String, value: String)>) -> [(key: String, value: String)] {
-        let pairs = Array(pairs)
-        let current = Set(pairs.map(\.key))
-        return pairs.compactMap { pair in
-            guard pair.key.hasPrefix("JEV_") else { return pair }
-            let renamed = "DSHIFT_" + pair.key.dropFirst("JEV_".count)
-            return current.contains(renamed) ? nil : (renamed, pair.value)
-        }
-    }
 
     public subscript(key: String) -> String? { values[key] }
 

@@ -192,12 +192,6 @@ enum Fixture {
         #expect(HostPresets.resolve(flag: "off", environment: env(["OPENROUTER_API_KEY": "or"])).hosts.isEmpty)
     }
 
-    @Test func legacyProviderVariableStillWorks() {
-        let resolution = HostPresets.resolve(environment: env(["DSHIFT_PROVIDER": "typesafe", "TYPESAFE_API_KEY": "ts"]))
-        #expect(resolution.hosts.first?.url == "https://api.typesafe.ai/v1/systemone")
-        #expect(resolution.hosts.first?.model == "jev-latest")
-    }
-
     @Test(arguments: [
         ("https://jev.example.com/run", true),
         ("http://localhost:8080/jev", true),

@@ -188,7 +188,6 @@ public enum HostPresets {
         let env = Env(environment: environment)
         let explicit: (String, String)? = flag.flatMap { $0.isEmpty ? nil : ("--host", $0) }
             ?? env.first("DSHIFT_HOST").map { ("DSHIFT_HOST", $0) }
-            ?? env.first("DSHIFT_PROVIDER").map { ("DSHIFT_PROVIDER", $0) }
         if let (source, list) = explicit {
             let ids = list.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
             if ids == ["none"] || ids == ["off"] { return HostResolution(hosts: [], source: source, problems: []) }

@@ -105,9 +105,7 @@ override or add models in `~/.config/downshift/prices.json`:
 
 ## Configuration
 
-Settings come from, in order: the environment, the keychain, `./.env`, `~/.downshift.env`,
-then the legacy `~/.jev-router.env` and `~/.jev-claude.env`. The first place that sets a
-variable wins. Older `JEV_*` names are still read as `DSHIFT_*`.
+Settings come from, in order: the environment, the keychain, `./.env` and `~/.downshift.env`.
 
 | Variable | Effect |
 |---|---|

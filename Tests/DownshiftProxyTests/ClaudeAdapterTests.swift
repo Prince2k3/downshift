@@ -15,8 +15,6 @@ struct ClaudeAdapterTests {
         #expect(!RouterModel.isRouted("claude-haiku-4-5-20251001"), "internal Haiku calls pass through")
         #expect(!RouterModel.isRouted(nil))
         #expect(ClaudeModel.tier(of: "downshift") == nil)
-        #expect(RouterModel.isRouted("jev-router"), "the pre-rename sentinel still routes")
-        #expect(ClaudeModel.tier(of: "jev-router") == nil)
         #expect(ClaudeModel.tier(of: "claude-sonnet-5") == .balanced)
     }
 

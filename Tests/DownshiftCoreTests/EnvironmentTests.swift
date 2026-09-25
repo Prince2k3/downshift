@@ -46,36 +46,17 @@ struct EnvFileTests {
 }
 
 struct DownshiftEnvironmentTests {
-    @Test func precedenceIsProcessThenDotEnvThenHomeFiles() throws {
+    @Test func precedenceIsProcessThenDotEnvThenHomeFile() throws {
         let cwd = try temporaryDirectory("cwd")
         let home = try temporaryDirectory("home")
         try "A=dotenv\nB=dotenv\n".write(to: cwd.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
-        try "B=router\nC=router\n".write(to: home.appendingPathComponent(".jev-router.env"), atomically: true, encoding: .utf8)
-        try "C=legacy\nD=legacy\n".write(to: home.appendingPathComponent(".jev-claude.env"), atomically: true, encoding: .utf8)
+        try "B=home\nC=home\n".write(to: home.appendingPathComponent(".downshift.env"), atomically: true, encoding: .utf8)
 
         let env = DownshiftEnvironment.load(process: ["A": "process"], currentDirectory: cwd, home: home, credentials: nil)
         #expect(env["A"] == "process")
         #expect(env["B"] == "dotenv")
-        #expect(env["C"] == "router")
-        #expect(env["D"] == "legacy")
-        #expect(env.loadedFiles.map(\.lastPathComponent) == [".env", ".jev-router.env", ".jev-claude.env"])
-    }
-
-    @Test func legacyJevVariablesAreReadAsDshift() throws {
-        let cwd = try temporaryDirectory("cwd")
-        let home = try temporaryDirectory("home")
-        try "JEV_MODEL=file\nJEV_DUMP=file\nDSHIFT_DUMP=new-file\n"
-            .write(to: home.appendingPathComponent(".jev-router.env"), atomically: true, encoding: .utf8)
-        let env = DownshiftEnvironment.load(
-            process: ["JEV_HOST": "vercel", "JEV_DEBUG": "1", "DSHIFT_DEBUG": "", "CLOUDFLARE_API_TOKEN_JEV": "t"],
-            currentDirectory: cwd, home: home, stored: .success(["JEV_MODEL": "stored"]))
-        #expect(env["DSHIFT_HOST"] == "vercel")
-        #expect(env["DSHIFT_DEBUG"] == "")          // the new name wins within one place
-        #expect(env["DSHIFT_MODEL"] == "stored")    // an earlier place wins over a later one
-        #expect(env["DSHIFT_DUMP"] == "new-file")
-        #expect(env["CLOUDFLARE_API_TOKEN_JEV"] == "t")
-        #expect(env["JEV_HOST"] == nil)
-        #expect(env.storedKeys == ["DSHIFT_MODEL"])
+        #expect(env["C"] == "home")
+        #expect(env.loadedFiles.map(\.lastPathComponent) == [".env", ".downshift.env"])
     }
 
     @Test func keychainValuesSitBetweenProcessAndFiles() throws {
