@@ -93,6 +93,14 @@ let claudeFixture = """
         #expect(try box.read(.claude) == expected)
     }
 
+    /// Claude Code assumes 200K for an unknown id and would auto-compact a longer session on
+    /// every turn, so the sentinel is declared with the largest window a routed model has.
+    @Test func claudeEditDeclaresTheSentinelsWindow() {
+        let env = Dictionary(uniqueKeysWithValues: ClaudeSettingsEdit.managedEnv(baseURL: "http://127.0.0.1:1"))
+        #expect(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "1000000")
+        #expect(ClaudeModel.routedContextWindow == 1_000_000)
+    }
+
     @Test func codexEditPutsProfileBeforeFirstTable() throws {
         let box = try Sandbox()
         try box.write(.codex, codexFixture)
@@ -144,6 +152,22 @@ let claudeFixture = """
         #expect(try box.read(.claude) == claudeFixture.replacingOccurrences(of: "\"opus\"", with: "\"sonnet\""))
     }
 
+    @Test func claudeDisablePutsBackTheModelReplacedByTheSentinel() throws {
+        let box = try Sandbox()
+        try box.write(.claude, claudeFixture)
+        _ = try box.manager.enable(.claude)
+        // Picking Dynamic (Downshift) in the app's /model saves the sentinel.
+        try box.write(.claude, try box.read(.claude).replacingOccurrences(of: "\"opus\"", with: "\"downshift\""))
+        _ = try box.manager.disable(.claude)
+        #expect(try box.read(.claude) == claudeFixture)
+
+        try box.write(.claude, #"{"x":1}"#)
+        _ = try box.manager.enable(.claude)
+        try box.write(.claude, try box.read(.claude).replacingOccurrences(of: #""x""#, with: #""model":"downshift","x""#))
+        _ = try box.manager.disable(.claude)
+        #expect(try box.read(.claude) == #"{"x":1}"#)
+    }
+
     @Test func claudePreviousValueIsRestoredAndChangedValueKept() throws {
         let box = try Sandbox()
         try box.write(.claude, #"{"env":{"ANTHROPIC_BASE_URL":"https://gateway.example"}}"#)
@@ -168,6 +192,58 @@ let claudeFixture = """
         try box.write(.codex, try box.read(.codex) + "[tui]\nnotifications = true\n")
         guard case .removedEntries = try box.manager.disable(.codex) else { Issue.record("expected surgical"); return }
         #expect(try box.read(.codex) == codexFixture + "[tui]\nnotifications = true\n")
+    }
+
+    @Test func codexTopLevelEndsAtAnIndentedHeaderNotInsideAString() throws {
+        let lines = CodexConfigEdit.splitLines(#"""
+            model = "gpt-5"
+            instructions = """
+            [not a table]
+            model_provider = "nope"
+            """
+            notify = ["a", # ]
+              "b"]
+              [projects.x]
+            model = "inside"
+            """#)
+        #expect(CodexConfigEdit.firstTableHeaderIndex(lines) == 7)
+        let data = Data(lines.joined(separator: "\n").utf8)
+        #expect(CodexConfigEdit.topLevelString(data, key: "model") == "gpt-5")
+        #expect(CodexConfigEdit.topLevelString(data, key: "model_provider") == nil)
+        #expect(CodexConfigEdit.tableString(data, table: ["projects", "x"], key: "model") == "inside")
+
+        // The default provider goes before the indented header, and the `model_provider` inside
+        // the string is not mistaken for an existing one.
+        let (updated, _) = try CodexConfigEdit.enable(data, baseURL: "http://127.0.0.1:1/codex", defaultProvider: true)
+        let out = CodexConfigEdit.splitLines(String(decoding: updated, as: UTF8.self))
+        #expect(out[7] == CodexConfigEdit.beginMarker)
+        #expect(out[10] == "  [projects.x]")
+    }
+
+    @Test(arguments: [
+        "[model_providers.downshift]\nname = \"x\"",
+        "  [ model_providers . \"downshift\" ]",
+        "[model_providers.downshift.http_headers]\nX = \"y\"",
+        "model_providers.downshift.name = \"x\"",
+        "[model_providers]\ndownshift = { name = \"x\" }",
+        "[model_providers]\ndownshift.name = \"x\"",
+        "model_providers = { other = {}, downshift = { name = \"x\" } }",
+    ])
+    func codexRefusesAnyExistingDownshiftProvider(config: String) {
+        #expect(throws: AppsError.self) {
+            try CodexConfigEdit.enable(Data(config.utf8), baseURL: "http://127.0.0.1:1/codex", defaultProvider: false)
+        }
+    }
+
+    @Test func codexIgnoresDownshiftInsideStringsAndOtherProviders() throws {
+        let config = #"""
+            note = """
+            [model_providers.downshift]
+            """
+            [model_providers.other]
+            name = "downshift = {"
+            """#
+        _ = try CodexConfigEdit.enable(Data(config.utf8), baseURL: "http://127.0.0.1:1/codex", defaultProvider: false)
     }
 
     @Test func codexConflictsAreRefused() throws {

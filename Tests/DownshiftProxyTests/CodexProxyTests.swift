@@ -34,7 +34,7 @@ let codexCompleted = "event: response.completed\ndata: {\"type\":\"response.comp
 /// Runs a fake ChatGPT backend (under `/backend-api/codex`) and public API (under `/v1`), and
 /// the Codex route in front of them at `/codex`.
 func withCodexProxy(
-    engine: RoutingEngine,
+    engine: RoutingEngine?,
     upstreamOverride: String? = nil,
     _ body: @Sendable (_ proxyPort: Int, _ client: HTTPClient, _ upstream: CodexUpstreamLog) async throws -> Void
 ) async throws {
@@ -182,6 +182,18 @@ func text(_ response: HTTPClientResponse) async throws -> String {
         }
     }
 
+    @Test func withoutRoutingAPIKeysStillGoToThePublicAPI() async throws {
+        try await withCodexProxy(engine: nil) { port, client, upstream in
+            let stream = try await text(try await post(client, port: port, path: "/codex/responses", codexTurn("hello"),
+                                                       headers: [("authorization", "Bearer sk-test")]))
+            _ = try await text(try await post(client, port: port, path: "/codex/responses", codexTurn("hi"), headers: codexHeaders))
+            let seen = await upstream.seen
+            #expect(seen.map(\.path) == ["/v1/responses", "/backend-api/codex/responses"])
+            #expect(seen.allSatisfy { $0.body?["model"]?.stringValue == "downshift" })
+            #expect(stream == codexCreated + codexCompleted)
+        }
+    }
+
     @Test func aModelThePickerChoseIsLeftAlone() async throws {
         let spy = RouterSpy(Self.answer)
         let dir = try temporaryDirectory()
@@ -257,6 +269,7 @@ func text(_ response: HTTPClientResponse) async throws -> String {
                     let replies = NIOLockedValueBox<[String]>([])
                     var headers = HTTPFields()
                     headers[HTTPField.Name("session-id")!] = "ws1"
+                    headers[HTTPField.Name("chatgpt-account-id")!] = "acct"
                     try await WebSocketClient.connect(url: "ws://localhost:\(proxyPort)/codex/responses",
                                                       configuration: .init(maxFrameSize: 1 << 22, additionalHeaders: headers),
                                                       logger: Logger(label: "test-client")) { inbound, outbound, _ in
@@ -283,6 +296,52 @@ func text(_ response: HTTPClientResponse) async throws -> String {
             throw error
         }
         try await client.shutdown()
+    }
+
+    /// An API key must not be sent to ChatGPT over a WebSocket either, routed or not.
+    @Test func apiKeyWebSocketsGoToThePublicAPI() async throws {
+        let paths = NIOLockedValueBox<[String]>([])
+        let upstream = Application(
+            router: Router(),
+            server: .http1WebSocketUpgrade(configuration: .init(ws: .init(maxFrameSize: 1 << 22))) { head, _, _ in
+                paths.withLockedValue { $0.append(head.path ?? "") }
+                return .upgrade([:]) { inbound, outbound, _ in
+                    for try await message in inbound.messages(maxSize: 1 << 22) {
+                        guard case .text = message else { continue }
+                        try await outbound.write(.text(#"{"type":"response.completed"}"#))
+                    }
+                }
+            },
+            configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+        try await upstream.test(.live) { upstreamClient in
+            let port = try #require(upstreamClient.port)
+            let route = PassthroughResponder.Route(
+                prefix: "/codex", upstream: "http://localhost:\(port)/backend-api/codex",
+                interceptor: CodexInterceptor(engine: nil, apiUpstream: "http://localhost:\(port)/v1"))
+            let webSocket = WebSocketPassthrough(routes: [route], logger: Logger(label: "test"))
+            let proxy = Application(
+                router: Router(),
+                server: .http1WebSocketUpgrade(configuration: .init(ws: .init(maxFrameSize: 1 << 22))) { head, _, _ in
+                    await webSocket.shouldUpgrade(head)
+                },
+                configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+            try await proxy.test(.live) { proxyClient in
+                let proxyPort = try #require(proxyClient.port)
+                for account in [nil, "acct"] {
+                    var headers = HTTPFields()
+                    headers[.authorization] = account == nil ? "Bearer sk-test" : "Bearer subscription-token"
+                    if let account { headers[HTTPField.Name("chatgpt-account-id")!] = account }
+                    try await WebSocketClient.connect(url: "ws://localhost:\(proxyPort)/codex/responses",
+                                                      configuration: .init(additionalHeaders: headers),
+                                                      logger: Logger(label: "test-client")) { inbound, outbound, _ in
+                        try await outbound.write(.text(#"{"type":"response.create","model":"gpt-5.6-terra","input":[]}"#))
+                        for try await _ in inbound.messages(maxSize: 1 << 22) { break }
+                        try await outbound.close(.normalClosure, reason: nil)
+                    }
+                }
+                #expect(paths.withLockedValue { $0 } == ["/v1/responses", "/backend-api/codex/responses"])
+            }
+        }
     }
 
     /// Each `response.create` is metered when the upstream's message ending it arrives, routed
@@ -318,6 +377,7 @@ func text(_ response: HTTPClientResponse) async throws -> String {
                     let proxyPort = try #require(proxyClient.port)
                     var headers = HTTPFields()
                     headers[HTTPField.Name("session-id")!] = "ws1"
+                    headers[HTTPField.Name("chatgpt-account-id")!] = "acct"
                     try await WebSocketClient.connect(url: "ws://localhost:\(proxyPort)/codex/responses",
                                                       configuration: .init(maxFrameSize: 1 << 22, additionalHeaders: headers),
                                                       logger: Logger(label: "test-client")) { inbound, outbound, _ in

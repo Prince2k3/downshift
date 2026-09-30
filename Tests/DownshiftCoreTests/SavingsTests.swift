@@ -114,6 +114,20 @@ import Testing
         #expect(abs(report.actualCost - 2.1) < 1e-9)
     }
 
+    /// Switching models writes the whole prefix to a cold cache; the baseline would have read it.
+    @Test func aSwitchIsNotCreditedWithTheCacheWritesItCaused() {
+        let records = [
+            Self.turn("claude-opus-5", baseline: "claude-opus-5", routed: true, session: "s", TokenUsage(cacheWrite: 1_000_000)),
+            Self.turn("claude-sonnet-5", baseline: "claude-opus-5", routed: true, session: "s", TokenUsage(cacheWrite: 1_000_000)),
+            Self.turn("claude-sonnet-5", baseline: "claude-opus-5", routed: true, session: "s", TokenUsage(cacheWrite: 1_000_000)),
+        ]
+        let report = SavingsReport(records: records, prices: PriceTable())
+        // Opus writes $6.25 on the first turn either way. The switch turn costs $2.50 on Sonnet
+        // against $0.50 of Opus cache reads; the turn after it is an ordinary write on both.
+        #expect(abs(report.actualCost - 11.25) < 1e-9)
+        #expect(abs(report.baselineCost - 13.0) < 1e-9)
+    }
+
     @Test func sinceAcceptsDurationsAllAndDates() {
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         #expect(SincePeriod.parse("7d", now: now) == .some(now.addingTimeInterval(-7 * 86_400)))

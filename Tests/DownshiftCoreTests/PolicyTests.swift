@@ -25,7 +25,11 @@ struct PolicyTests {
     @Test func detectOverrideOnlyFiresOnARealInstruction() {
         #expect(Policy.detectOverride("switch to opus") == .strong)
         #expect(Policy.detectOverride("use luna") == .fast)
-        #expect(Policy.detectOverride("use strong") == .strong)
+        #expect(Policy.detectOverride("use sol") == .strong)
+        #expect(Policy.detectOverride("use fast-path parsing") == nil)
+        #expect(Policy.detectOverride("work on long-running jobs") == nil)
+        #expect(Policy.detectOverride("use strong typing") == nil)
+        #expect(Policy.detectOverride("with balanced parentheses") == nil)
         #expect(Policy.detectOverride("the opus of his career") == nil)
         // Case-insensitive, any whitespace, and whole words only.
         #expect(Policy.detectOverride("Please SWITCH TO\tSonnet now") == .balanced)

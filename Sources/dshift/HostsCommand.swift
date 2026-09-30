@@ -11,7 +11,7 @@ struct HostsCommand: AsyncParsableCommand {
         discussion: """
             dshift asks the first host whose credentials are set, in the order `dshift hosts list` shows,
             unless DSHIFT_HOST (or `dshift serve --host`) names one, or a comma-separated failover list.
-            Credentials come from the environment, the keychain (`dshift setup`), ./.env or
+            Credentials come from the environment, the keychain (`dshift setup`) or
             ~/.downshift.env, the first place a variable is set winning.
             """,
         subcommands: [List.self, Test.self, Remove.self],

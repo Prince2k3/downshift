@@ -152,6 +152,17 @@ func write(_ text: String, to url: URL) throws {
         #expect(plain["ANTHROPIC_MODEL"] == "opus")
     }
 
+    @Test func anExistingBaseURLBecomesTheUpstream() {
+        #expect(ClaudeLaunch.existingUpstream(["ANTHROPIC_BASE_URL": "https://gateway.example/anthropic/"])
+                == "https://gateway.example/anthropic")
+        #expect(ClaudeLaunch.existingUpstream([:]) == nil)
+        #expect(ClaudeLaunch.existingUpstream(["ANTHROPIC_BASE_URL": ""]) == nil)
+        #expect(ClaudeLaunch.existingUpstream(["ANTHROPIC_BASE_URL": "file:///etc"]) == nil)
+        // Nested in another dshift session: its proxy is already in front.
+        #expect(ClaudeLaunch.existingUpstream(["ANTHROPIC_BASE_URL": "http://127.0.0.1:5000",
+                                               "ANTHROPIC_MODEL": "downshift"]) == nil)
+    }
+
     @Test func statusLineSettingsRunJev() throws {
         let data = ClaudeLaunch.statusLineSettings(command: "/opt/dshift")
         let value = try JSONValue.parse(data)

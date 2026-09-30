@@ -44,6 +44,7 @@ public struct SavingsReport: Sendable, Equatable {
         var byModel: [String: ModelLine] = [:]
         var unpriced = Set<String>()
         var sessions: [String: (routed: Bool, turns: Int, manual: Int)] = [:]
+        var lastModel: [String: String] = [:]
 
         for record in records where app.map({ record.app == $0 }) ?? true {
             switch record.kind {
@@ -60,7 +61,12 @@ public struct SavingsReport: Sendable, Equatable {
                 turns += 1
                 tokens = tokens + record.tokens
                 if record.routed { routedTurns += 1 } else { manualTurns += 1 }
+                // A switch starts the new model on a cold cache, so this turn writes the whole
+                // prefix. The conversation left on its baseline would have read that prefix from
+                // cache instead, so the baseline is priced with those writes as reads.
+                let switched = lastModel[record.session].map { PriceTable.normalize($0) != PriceTable.normalize(record.model) } ?? false
                 if !record.session.isEmpty {
+                    lastModel[record.session] = record.model
                     var session = sessions[record.session] ?? (false, 0, 0)
                     session.turns += 1
                     if record.routed { session.routed = true } else { session.manual += 1 }
@@ -69,7 +75,12 @@ public struct SavingsReport: Sendable, Equatable {
 
                 let actual = prices.cost(record.tokens, model: record.model)
                 let baselineModel = record.routed ? (baseline ?? record.baseline ?? record.model) : record.model
-                let base = prices.cost(record.tokens, model: baselineModel)
+                var baselineTokens = record.tokens
+                if switched, record.routed {
+                    baselineTokens.cacheRead += baselineTokens.cacheWrite
+                    baselineTokens.cacheWrite = 0
+                }
+                let base = prices.cost(baselineTokens, model: baselineModel)
                 var line = byModel[record.model] ?? ModelLine(model: record.model, turns: 0, tokens: TokenUsage(), cost: 0)
                 line.turns += 1
                 line.tokens = line.tokens + record.tokens

@@ -12,7 +12,8 @@ public protocol CLIAdapter: Sendable {
     /// The session id the body carries, or "".
     func sessionOf(_ body: JSONValue) -> String
     /// Identifies the conversation, so sub-agents keep their own routing state.
-    func conversationKey(_ body: JSONValue) -> String
+    /// `session` is the one the request resolved to: the body's, else the session header.
+    func conversationKey(_ body: JSONValue, session: String) -> String
     /// The text of a genuinely new user turn, or nil for continuations and auxiliary calls.
     func newTurnPrompt(_ body: JSONValue) -> String?
     /// Whether a request for a model the user picked is a real agent turn, which flips the
@@ -38,7 +39,7 @@ public struct ClaudeCLI: CLIAdapter {
 
     public func prepare(_ body: inout JSONValue) { ClaudeAdapter.sanitizeTools(&body) }
     public func sessionOf(_ body: JSONValue) -> String { ClaudeAdapter.sessionOf(body) }
-    public func conversationKey(_ body: JSONValue) -> String { ClaudeAdapter.conversationKey(body) }
+    public func conversationKey(_ body: JSONValue, session: String) -> String { ClaudeAdapter.conversationKey(body, session: session) }
     public func newTurnPrompt(_ body: JSONValue) -> String? { ClaudeAdapter.newTurnPrompt(body) }
     /// Auxiliary calls (titles, summaries) carry no tools.
     public func isAgentTurn(_ body: JSONValue) -> Bool { body["tools"]?.arrayValue != nil }

@@ -178,6 +178,13 @@ import Testing
         #expect(String(decoding: bytes, as: UTF8.self) == "event: a\ndata: 1\n\nevent: jev\ndata: {}\n\nevent: b\ndata: 2\n\n")
     }
 
+    /// SSE allows CRLF line endings; the first event must still be found rather than held for 1 MiB.
+    @Test func findsACRLFTerminatedFirstEvent() {
+        let (bytes, injected) = run([Array("event: a\r\ndata: 1\r\n\r\n".utf8), Array("event: b\r\ndata: 2\r\n\r\n".utf8)])
+        #expect(injected)
+        #expect(String(decoding: bytes, as: UTF8.self) == "event: a\r\ndata: 1\r\n\r\nevent: jev\ndata: {}\n\nevent: b\r\ndata: 2\r\n\r\n")
+    }
+
     @Test func leavesNonSSEAlone() {
         let json = Array(#"{"error":{"message":"x"}}"#.utf8)
         let (bytes, injected) = run([json])

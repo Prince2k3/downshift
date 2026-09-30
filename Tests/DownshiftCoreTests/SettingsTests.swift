@@ -26,6 +26,27 @@ struct ClaudeSettingsTests {
         #expect(ClaudeSettings.savedModel(in: URL(fileURLWithPath: "/nonexistent/settings.json")) == nil)
     }
 
+    @Test func aSecondSessionStillKnowsTheModelTheFirstReplaced() throws {
+        let url = try file(#"{"model": "opus"}"#)
+        let memo = url.deletingLastPathComponent().appendingPathComponent("state/claude-saved-model.json")
+        // Session A starts, then saves the sentinel from /model.
+        let first = ClaudeSettings.savedModel(in: url, memo: memo)
+        #expect(first == "opus")
+        try Data(#"{"model": "downshift"}"#.utf8).write(to: url)
+        // Session B starts meanwhile: it sees the sentinel but restores the real model.
+        let second = ClaudeSettings.savedModel(in: url, memo: memo)
+        #expect(second == "opus")
+        #expect(ClaudeSettings.restoreSavedModel(second, in: url))
+        #expect(ClaudeSettings.savedModel(in: url) == "opus")
+        #expect(try FileManager.default.attributesOfItem(atPath: memo.path)[.posixPermissions] as? Int == 0o600)
+
+        // No saved model is remembered too.
+        try Data("{}".utf8).write(to: url)
+        #expect(ClaudeSettings.savedModel(in: url, memo: memo) == nil)
+        try Data(#"{"model": "downshift"}"#.utf8).write(to: url)
+        #expect(ClaudeSettings.savedModel(in: url, memo: memo) == nil)
+    }
+
     @Test func restoresThePreviousModelWhenTheSentinelWasSaved() throws {
         let url = try file("""
             {

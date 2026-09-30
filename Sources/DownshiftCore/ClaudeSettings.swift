@@ -17,6 +17,28 @@ public enum ClaudeSettings {
         return model
     }
 
+    /// Like `savedModel(in:)`, but remembers the real model in `memo` so a session that starts
+    /// while another has the sentinel saved still knows what to put back. Without it, the
+    /// second session would see no model and both would restore to none.
+    public static func savedModel(in file: URL, memo: URL) -> String? {
+        guard let data = try? Data(contentsOf: file), let document = try? JSONDocument(parsing: data) else {
+            return nil
+        }
+        let model = document.root["model"]?.stringValue
+        if RouterModel.isRouted(model) {
+            guard let memoData = try? Data(contentsOf: memo), let memoDocument = try? JSONDocument(parsing: memoData) else {
+                return nil
+            }
+            return memoDocument.root["model"]?.stringValue
+        }
+        let object: JSONObject = model.map { ["model": .string($0)] } ?? [:]
+        let directory = memo.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        try? AtomicFile.write(Data(JSONValue.object(object).serialized()), to: memo, permissions: 0o600)
+        return model
+    }
+
     /// Puts `previous` back if the file now holds the sentinel (removing `model` when there was
     /// none). Anything but an exact sentinel is left alone, so a real model chosen during the
     /// session survives. Other keys, their order and the file's indentation are kept.

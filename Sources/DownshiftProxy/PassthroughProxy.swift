@@ -74,6 +74,10 @@ public struct PassthroughResponder: HTTPResponder {
     }
 
     public func respond(to request: Request, context: Context) async throws -> Response {
+        if let refusal = LocalOnly.refusal(authority: request.head.authority, headers: request.headers) {
+            logger.warning("refused a request", metadata: ["reason": "\(refusal)"])
+            return Response(status: .forbidden, body: ResponseBody(byteBuffer: ByteBuffer(string: "dshift: \(refusal)\n")))
+        }
         // Claude Code and the Codex app probe the base URL with HEAD before the first request;
         // answer locally so the probe works whatever the upstream does with HEAD (plan bug #7).
         if request.method == .head { return Response(status: .ok) }
@@ -146,11 +150,13 @@ public struct PassthroughResponder: HTTPResponder {
         }
 
         let upstreamBody = upstreamResponse.body
-        let succeeded = (200..<300).contains(status.code)
-        let frames = succeeded ? afterFirstEvent : nil
-        // A compressed body can't be read as it passes; that reply goes unmetered.
+        // A compressed body can't be read as it passes: that reply goes unmetered and gets no
+        // status frames, rather than being held back while the injector looks for an event end.
         let encoding = upstreamResponse.headers.first(name: "content-encoding")?.lowercased() ?? "identity"
-        let metered = succeeded && encoding == "identity" ? usage : nil
+        let readable = (200..<300).contains(status.code) && encoding == "identity"
+        let isEventStream = upstreamResponse.headers.first(name: "content-type")?.lowercased().contains("text/event-stream") ?? false
+        let frames = readable && isEventStream ? afterFirstEvent : nil
+        let metered = readable ? usage : nil
         return Response(status: status, headers: headers, body: ResponseBody { writer in
             var injector = frames.map(SSEInjector.init(frames:))
             var meter = metered.map { _ in UsageMeter() }
@@ -270,5 +276,32 @@ extension HTTPClient {
         var configuration = HTTPClient.Configuration(redirectConfiguration: .disallow, decompression: .disabled)
         configuration.timeout.connect = connectTimeout
         return HTTPClient(eventLoopGroupProvider: .singleton, configuration: configuration)
+    }
+}
+
+/// Only local programs may use the proxy. Listening on 127.0.0.1 keeps other machines out, but
+/// any web page the user opens can still send a "simple" cross-origin POST (`text/plain`, no
+/// preflight) to 127.0.0.1, or reach it by DNS rebinding a hostname it controls. Browsers
+/// always send `Origin` on those requests and put the page's hostname in `Host`, so a remote
+/// (or `null`) origin and a non-loopback Host are refused. Some WebSocket clients send a
+/// loopback Origin of their own, which is allowed.
+enum LocalOnly {
+    static func refusal(authority: String?, headers: HTTPFields) -> String? {
+        if let origin = headers[.origin], !(URLComponents(string: origin)?.host.map(isLoopback(authority:)) ?? false) {
+            return "requests from web pages are refused (Origin: \(origin))"
+        }
+        if let authority, !isLoopback(authority: authority) { return "Host \(authority) is not a loopback address" }
+        return nil
+    }
+
+    static func isLoopback(authority: String) -> Bool {
+        var host = Substring(authority)
+        if host.hasPrefix("[") {
+            host = host.dropFirst().prefix { $0 != "]" }
+        } else if let colon = host.lastIndex(of: ":") {
+            host = host[..<colon]
+        }
+        let name = host.lowercased()
+        return name == "127.0.0.1" || name == "::1" || name == "localhost" || name.hasSuffix(".localhost")
     }
 }

@@ -13,6 +13,21 @@ public enum ClaudeSettingsEdit {
         /// The value of each managed env key before enabling (`nil` = the key was absent).
         public var env: [String: String?]
         public var envExisted: Bool
+        /// The saved `model` before enabling. Picking the sentinel's /model row saves
+        /// `"model": "downshift"`, which plain `claude` can't resolve once the proxy is gone.
+        public var model: String?
+
+        public init(env: [String: String?], envExisted: Bool, model: String? = nil) {
+            self.env = env
+            self.envExisted = envExisted
+            self.model = model
+        }
+    }
+
+    /// The `env.ANTHROPIC_BASE_URL` a settings file sets, if any.
+    public static func baseURL(in data: Data?) -> String? {
+        guard let data, let root = try? JSONValue.parse(data).objectValue else { return nil }
+        return root["env"]?.objectValue?[baseURLKey]?.stringValue
     }
 
     /// The row the sentinel gets in Claude Code's /model picker, named like the Codex one.
@@ -21,8 +36,11 @@ public enum ClaudeSettingsEdit {
     /// The base URL, then the sentinel's /model picker row. Claude Code sends the id verbatim
     /// behind a custom base URL, which is how the proxy tells "route this" from a model the
     /// user picked. Capabilities are declared so Claude Code still composes thinking and
-    /// effort; the proxy strips what the routed model can't accept. Some Claude Code versions
-    /// check the model client-side, so the window-enforcement flag defers that to the API.
+    /// effort; the proxy strips what the routed model can't accept. Claude Code doesn't know
+    /// the sentinel's context window and would assume 200K, auto-compacting a longer session on
+    /// every turn, so the window is declared (it applies only to model ids not named
+    /// `claude-*`), and the window-enforcement flag keeps versions that check it client-side
+    /// from capping it again.
     public static func managedEnv(baseURL: String) -> [(String, String)] {
         [
             (baseURLKey, baseURL),
@@ -32,6 +50,7 @@ public enum ClaudeSettingsEdit {
             ("ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES",
              "thinking,adaptive_thinking,interleaved_thinking,effort,max_effort"),
             ("CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT", "1"),
+            ("CLAUDE_CODE_MAX_CONTEXT_TOKENS", String(ClaudeModel.routedContextWindow)),
         ]
     }
 
@@ -54,14 +73,24 @@ public enum ClaudeSettingsEdit {
             env[key] = .string(value)
         }
         root["env"] = .object(env)
-        return (render(root, indent: indent, trailingNewline: trailingNewline), Previous(env: previous, envExisted: envExisted))
+        let model = root["model"]?.stringValue.flatMap { RouterModel.isRouted($0) ? nil : $0 }
+        return (render(root, indent: indent, trailingNewline: trailingNewline),
+                Previous(env: previous, envExisted: envExisted, model: model))
     }
 
-    /// Removes only what `enable` added. A key the user has since changed to another value is
-    /// left alone and reported.
+    /// Removes only what `enable` added, plus a saved sentinel model (put back to the model
+    /// saved before enabling). A key the user has since changed to another value is left
+    /// alone and reported.
     public static func disable(_ data: Data, baseURL: String, previous: Previous) throws -> (Data, untouched: [String]) {
         var (root, indent, trailingNewline) = try parse(data)
-        guard case .object(var env)? = root["env"] else { return (data, []) }
+        var changed = false
+        if RouterModel.isRouted(root["model"]?.stringValue) {
+            root["model"] = previous.model.map(JSONValue.string)
+            changed = true
+        }
+        guard case .object(var env)? = root["env"] else {
+            return (changed ? render(root, indent: indent, trailingNewline: trailingNewline) : data, [])
+        }
         var untouched: [String] = []
         for (key, value) in managedEnv(baseURL: baseURL) {
             guard env[key]?.stringValue == value else {

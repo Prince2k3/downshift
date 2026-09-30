@@ -105,7 +105,7 @@ public struct JSONSchema: Sendable {
                         throw SchemaError(schemaPath: keyPath, message: "must be a non-negative integer")
                     }
                 case "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum":
-                    guard case .number(let literal) = entry.value, Decimal(string: literal) != nil else {
+                    guard case .number(let literal) = entry.value, Double(literal) != nil else {
                         throw SchemaError(schemaPath: keyPath, message: "must be a number")
                     }
                 case "enum":
@@ -275,21 +275,30 @@ public struct JSONSchema: Sendable {
     }
 
     /// Numeric bounds, kept out of `evaluate` so its frame stays small for deep `$ref` chains.
-    /// Decimal compares the literals exactly, so bounds like 2^53 - 1 are not rounded.
+    /// Decimal compares the literals exactly, so bounds like 2^53 - 1 are not rounded; past
+    /// Decimal's exponent range (about 1e165) the comparison falls back to Double, so a huge
+    /// value can't slip past a bound by failing to parse.
     private static func boundViolations(_ literal: String, _ keywords: JSONObject) -> [(String, String)] {
-        guard let value = Decimal(string: literal) else { return [] }
         var found: [(String, String)] = []
         for (keyword, violated, message) in [
-            ("minimum", { (v: Decimal, b: Decimal) in v < b }, "must be at least"),
-            ("maximum", { $0 > $1 }, "must be at most"),
-            ("exclusiveMinimum", { $0 <= $1 }, "must be greater than"),
-            ("exclusiveMaximum", { $0 >= $1 }, "must be less than"),
-        ] as [(String, (Decimal, Decimal) -> Bool, String)] {
-            guard case .number(let text)? = keywords[keyword], let bound = Decimal(string: text),
-                  violated(value, bound) else { continue }
+            ("minimum", { $0 == .orderedAscending }, "must be at least"),
+            ("maximum", { $0 == .orderedDescending }, "must be at most"),
+            ("exclusiveMinimum", { $0 != .orderedDescending }, "must be greater than"),
+            ("exclusiveMaximum", { $0 != .orderedAscending }, "must be less than"),
+        ] as [(String, (ComparisonResult) -> Bool, String)] {
+            guard case .number(let text)? = keywords[keyword], let order = compare(literal, text),
+                  violated(order) else { continue }
             found.append((keyword, "\(message) \(text)"))
         }
         return found
+    }
+
+    static func compare(_ lhs: String, _ rhs: String) -> ComparisonResult? {
+        if let a = Decimal(string: lhs), let b = Decimal(string: rhs) {
+            return a < b ? .orderedAscending : a > b ? .orderedDescending : .orderedSame
+        }
+        guard let a = Double(lhs), let b = Double(rhs), !a.isNaN, !b.isNaN else { return nil }
+        return a < b ? .orderedAscending : a > b ? .orderedDescending : .orderedSame
     }
 
     /// The failing branch with the fewest violations is the most useful to report

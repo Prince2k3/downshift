@@ -84,7 +84,7 @@ public struct CodexAdapter: CLIAdapter {
 
     /// `prompt_cache_key` is per conversation (sub-agents get their own); the turn metadata
     /// and the first user message are fallbacks.
-    public func conversationKey(_ body: JSONValue) -> String {
+    public func conversationKey(_ body: JSONValue, session: String = "") -> String {
         func text(_ value: JSONValue?) -> String? {
             guard let value, value != .null else { return nil }
             return value.stringValue ?? value.serializedString()

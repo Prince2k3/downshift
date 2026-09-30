@@ -65,6 +65,8 @@ func withWebSocketProxy(_ body: @Sendable (_ proxyPort: Int, _ handshakes: Hands
 
 @Suite struct WebSocketPassthroughTests {
     let logger = Logger(label: "test-client")
+    /// A ChatGPT sign-in, so the `/codex` route keeps the ChatGPT upstream.
+    let signedIn = WebSocketClientConfiguration(additionalHeaders: [HTTPField.Name("chatgpt-account-id")!: "acct"])
 
     @Test func messagesRelayBothWaysAndThePrefixIsStripped() async throws {
         try await withWebSocketProxy { port, handshakes in
@@ -109,7 +111,7 @@ func withWebSocketProxy(_ body: @Sendable (_ proxyPort: Int, _ handshakes: Hands
             // The echo upstream never closes on its own; closing from the client must end
             // both halves instead of leaving the relay waiting on the upstream.
             let start = ContinuousClock.now
-            try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/responses", logger: logger) { _, outbound, _ in
+            try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/responses", configuration: signedIn, logger: logger) { _, outbound, _ in
                 try await outbound.close(.normalClosure, reason: nil)
             }
             #expect(ContinuousClock.now - start < .seconds(5))
@@ -120,7 +122,7 @@ func withWebSocketProxy(_ body: @Sendable (_ proxyPort: Int, _ handshakes: Hands
         try await withWebSocketProxy { port, _ in
             let received = NIOLockedValueBox<[String]>([])
             let start = ContinuousClock.now
-            try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/bye", logger: logger) { inbound, _, _ in
+            try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/bye", configuration: signedIn, logger: logger) { inbound, _, _ in
                 for try await case .text(let text) in inbound.messages(maxSize: 1 << 16) {
                     received.withLockedValue { $0.append(text) }
                 }
@@ -133,7 +135,7 @@ func withWebSocketProxy(_ body: @Sendable (_ proxyPort: Int, _ handshakes: Hands
     @Test func refusedUpstreamFallsBackToHTTP() async throws {
         try await withWebSocketProxy { port, handshakes in
             await #expect(throws: WebSocketClientError.webSocketUpgradeFailed) {
-                try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/refuse", logger: logger) { _, _, _ in }
+                try await WebSocketClient.connect(url: "ws://localhost:\(port)/codex/refuse", configuration: signedIn, logger: logger) { _, _, _ in }
             }
             #expect(handshakes.all.map(\.path) == ["/refuse"])
         }

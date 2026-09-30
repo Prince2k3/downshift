@@ -189,7 +189,7 @@ public actor RoutingEngine {
             return (nil, usage(baseline: nil, routed: false))
         }
 
-        let key = adapter.conversationKey(body)
+        let key = adapter.conversationKey(body, session: session)
         let state = await conversation(key)
         let models = await models()
         let start = start(in: models)
@@ -199,10 +199,10 @@ public actor RoutingEngine {
         var tier = current
         var model = currentModel
         var outcome: RoutingOutcome?
+        let contextTokens = adapter.contextTokens(body)
 
         let prompt = adapter.newTurnPrompt(body)
         if decide, let prompt {
-            let contextTokens = adapter.contextTokens(body)
             let answer = await router?(RouteRequest(prompt: prompt, current: currentModel,
                                                     contextTokens: contextTokens, models: models))
             if let answer { recordJevUsage(answer, session: session) }
@@ -219,11 +219,16 @@ public actor RoutingEngine {
             } else {
                 model = decision.tier == current ? currentModel : adapter.model(for: decision.tier, in: models)
             }
+            var reason = decision.reason
+            if let larger = Self.larger(than: model, tier: tier, contextTokens: contextTokens, in: models) {
+                (tier, model) = (larger.tier, larger.id)
+                reason += "+context"
+            }
             await update(key, tier: tier, model: model)
-            outcome = RoutingOutcome(tier: tier, model: model, confidence: answer?.confidence, reason: decision.reason)
+            outcome = RoutingOutcome(tier: tier, model: model, confidence: answer?.confidence, reason: reason)
 
             log?.debug("\(key) \(answer.map { String(format: "p=%.2f", $0.confidence) } ?? "no-jev") "
-                       + "\(current.rawValue) -> \(tier.rawValue) (\(decision.reason)) ctx~\(contextTokens)")
+                       + "\(current.rawValue) -> \(tier.rawValue) (\(reason)) ctx~\(contextTokens)")
 
             // `claude -p` omits metadata on a session's first request, so without a session
             // id the decision is filed under the conversation key instead of being dropped.
@@ -231,15 +236,40 @@ public actor RoutingEngine {
                 "tier": .string(tier.rawValue),
                 "model": .string(model),
                 "confidence": answer.map { .number($0.confidence) } ?? .null,
-                "reason": .string(decision.reason),
+                "reason": .string(reason),
                 "at": .number(milliseconds()),
             ], session: session.isEmpty ? key : session)
+        } else if let larger = Self.larger(than: model, tier: tier, contextTokens: contextTokens, in: models) {
+            // A follow-up (tool results) can outgrow the model the turn started on.
+            log?.debug("\(key) \(tier.rawValue) -> \(larger.tier.rawValue) (context) ctx~\(contextTokens)")
+            (tier, model) = (larger.tier, larger.id)
+            await update(key, tier: tier, model: model)
         }
 
         // The sentinel is not a real model, so every routed request is rewritten, including
         // the follow-ups that reuse the tier chosen at the start of the turn.
         adapter.apply(&body, tier: tier, model: model, catalog: await catalogEntries())
         return (outcome, usage(baseline: start.model, routed: true))
+    }
+
+    /// Share of a model's window a conversation may fill before it moves up. The estimate
+    /// counts only the messages (not the system prompt or tools), so it leaves room for those.
+    public static let contextHeadroom = 0.85
+
+    /// The model to move to when the conversation no longer fits `model`: the first one, in
+    /// the nearest tier above, whose window holds it. Nil when it fits, when the window is
+    /// unknown, or when nothing larger does. Claude Code is told the largest window
+    /// (`ClaudeModel.routedContextWindow`) and compacts against that, so without this a long
+    /// session held on a smaller model would be rejected instead.
+    nonisolated static func larger(than model: String, tier: Tier, contextTokens: Int,
+                                   in models: [RoutableModel]) -> RoutableModel? {
+        func fits(_ candidate: RoutableModel) -> Bool {
+            guard let window = candidate.contextWindow else { return true }
+            return Double(contextTokens) <= Double(window) * contextHeadroom
+        }
+        let current = models.first { $0.id == model } ?? RoutableModel(id: model, tier: tier, description: "")
+        guard !fits(current) else { return nil }
+        return models.filter { $0.tier > tier && fits($0) }.min { $0.tier < $1.tier }
     }
 
     /// Records the tokens Jev's own routing call used, which count against what it saved.

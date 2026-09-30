@@ -6,8 +6,8 @@ import DownshiftCore
 ///
 /// Every write is preceded by a backup. `apps.json` records the backup, the hash of the file
 /// right after enabling, and what was replaced. On disable, if nobody touched the file since
-/// (hash matches) the backup is restored byte for byte; otherwise only dshift's entries are
-/// removed so the user's and the app's own later changes survive.
+/// (hash matches) the backup is restored byte for byte; otherwise only dshift's entries (and a
+/// saved sentinel model) are removed so the user's and the app's own later changes survive.
 public struct AppsManager: Sendable {
     public static let defaultPort = 47821
 
@@ -79,6 +79,7 @@ public struct AppsManager: Sendable {
             let (data, previous) = try ClaudeSettingsEdit.enable(original, baseURL: baseURL)
             updated = data
             record["envExisted"] = .bool(previous.envExisted)
+            record["previousModel"] = previous.model.map(JSONValue.string) ?? .null
             record["previousEnv"] = .object(JSONObject(previous.env.sorted { $0.key < $1.key }.map {
                 ($0.key, $0.value.map(JSONValue.string) ?? .null)
             }))
@@ -149,7 +150,8 @@ public struct AppsManager: Sendable {
             for entry in record["previousEnv"]?.objectValue?.entries ?? [] {
                 previousEnv[entry.key] = .some(entry.value.stringValue)
             }
-            let previous = ClaudeSettingsEdit.Previous(env: previousEnv, envExisted: record["envExisted"]?.boolValue ?? true)
+            let previous = ClaudeSettingsEdit.Previous(env: previousEnv, envExisted: record["envExisted"]?.boolValue ?? true,
+                                                       model: record["previousModel"]?.stringValue)
             (updated, untouched) = try ClaudeSettingsEdit.disable(current, baseURL: baseURL, previous: previous)
         case .codex:
             let previous = CodexConfigEdit.Previous(addedFinalNewline: record["addedFinalNewline"]?.boolValue ?? false)

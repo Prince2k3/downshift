@@ -22,13 +22,17 @@ public enum EnvFile {
             if let quote = rest.first, quote == "\"" || quote == "'" || quote == "`" {
                 rest = rest.dropFirst()
                 var body = String(rest)
-                // Multi-line: keep consuming lines until one contains the closing quote.
-                while !body.contains(quote), let next = lines.popFirst() { body += "\n" + next }
+                // Multi-line: look ahead for the line holding the closing quote.
+                if !body.contains(quote), let end = lines.firstIndex(where: { $0.contains(quote) }) {
+                    body += lines[..<lines.index(after: end)].map { "\n" + $0 }.joined()
+                    lines = lines[lines.index(after: end)...]
+                }
                 if let close = body.firstIndex(of: quote) {
                     body = String(body[..<close])
                 } else {
-                    // No closing quote anywhere: Node keeps the opening quote and the first line only.
-                    body = String(quote) + (body.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? "")
+                    // No closing quote anywhere: Node keeps the opening quote and this line only,
+                    // and parsing carries on with the next line.
+                    body = String(quote) + body
                 }
                 value = quote == "\"" ? body.replacingOccurrences(of: "\\n", with: "\n") : body
             } else {
@@ -43,7 +47,9 @@ public enum EnvFile {
 }
 
 /// The environment dshift runs with, where the first place a key is set wins:
-/// process env → the keychain (`dshift setup`) → `./.env` → `~/.downshift.env`.
+/// process env → the keychain (`dshift setup`) → `~/.downshift.env`.
+/// The current directory's `.env` is never read: a cloned repo could otherwise point the
+/// endpoint URLs at its own server and receive your key and every prompt.
 public struct DownshiftEnvironment: Sendable {
     public var values: [String: String]
     /// The env files that existed and were read, in precedence order.
@@ -60,22 +66,20 @@ public struct DownshiftEnvironment: Sendable {
         self.credentialProblem = credentialProblem
     }
 
-    public static func files(currentDirectory: URL, home: URL) -> [URL] {
-        [currentDirectory.appendingPathComponent(".env"),
-         home.appendingPathComponent(".downshift.env")]
+    public static func files(home: URL) -> [URL] {
+        [home.appendingPathComponent(".downshift.env")]
     }
 
     public static func load(
         process: [String: String] = ProcessInfo.processInfo.environment,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         credentials: CredentialStore? = .keychain
     ) -> DownshiftEnvironment {
         let stored = credentials.map { store in Result { try store.read() } } ?? .success([:])
-        return load(process: process, currentDirectory: currentDirectory, home: home, stored: stored)
+        return load(process: process, home: home, stored: stored)
     }
 
-    static func load(process: [String: String], currentDirectory: URL, home: URL,
+    static func load(process: [String: String], home: URL,
                      stored: Result<[String: String], any Error>) -> DownshiftEnvironment {
         var values = process
         var storedKeys: Set<String> = []
@@ -90,7 +94,7 @@ public struct DownshiftEnvironment: Sendable {
             problem = "\(error)"
         }
         var loaded: [URL] = []
-        for file in files(currentDirectory: currentDirectory, home: home) {
+        for file in files(home: home) {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             loaded.append(file)
             for (key, value) in EnvFile.parse(text) where values[key] == nil { values[key] = value }

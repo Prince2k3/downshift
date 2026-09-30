@@ -118,8 +118,11 @@ struct ClaudeCommand: AsyncParsableCommand {
         // With `dshift apps enable --claude`, the sentinel is a legitimate saved model; otherwise
         // one left behind by a killed session would break plain `claude`, so put it back.
         let appsManaged = ClaudeSettingsEdit.isEnabled(try? Data(contentsOf: userSettings)) != nil
-        let saved = ClaudeSettings.savedModel(in: userSettings)
-        if !appsManaged && ClaudeSettings.restoreSavedModel(nil, in: userSettings) {
+        let memo = AppsLocations.standard(environment: process).stateDirectory.appendingPathComponent("claude-saved-model.json")
+        let saved = ClaudeSettings.savedModel(in: userSettings, memo: memo)
+        // Another session's sentinel is restored to the memo's model, not removed, so neither
+        // session loses the model saved before both started.
+        if !appsManaged && ClaudeSettings.restoreSavedModel(saved, in: userSettings) {
             log.log("removed a downshift model left in \(userSettings.path) by an earlier session")
         }
 
@@ -149,8 +152,11 @@ struct ClaudeCommand: AsyncParsableCommand {
             environment: { port in
                 ClaudeLaunch.environment(process, baseURL: AppsManager.baseURL(for: .claude, port: port), route: route)
             })
-        let configuration = ProxyServer.Configuration(port: 0, codexUpstream: "", dumpDirectory: settings.dumpDirectory,
-                                                      claudeEngine: engine)
+        // Chain to a base URL the user already had rather than silently going around it.
+        let upstream = ClaudeLaunch.existingUpstream(process)
+        if let upstream { log.log("forwarding to ANTHROPIC_BASE_URL \(upstream)") }
+        let configuration = ProxyServer.Configuration(port: 0, upstream: upstream ?? ProxyServer.claudeUpstream, codexUpstream: "",
+                                                      dumpDirectory: settings.dumpDirectory, claudeEngine: engine)
         try await LaunchSupport.run(configuration, child: child, log: log) {
             // Choosing the picker row with Enter saves the sentinel as the default model.
             if !appsManaged && ClaudeSettings.restoreSavedModel(saved, in: userSettings) {

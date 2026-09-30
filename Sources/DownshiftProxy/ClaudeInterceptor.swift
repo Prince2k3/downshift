@@ -50,10 +50,13 @@ public protocol ProxyInterceptor: Sendable {
     func interceptMessage(path: String, headers: HTTPFields, text: String) async -> InterceptedMessage?
     /// The body of the 502 sent when the upstream can't be reached, in the API's error shape.
     func upstreamError(_ message: String) -> JSONValue
+    /// An upstream base to use instead of the route's, for HTTP and WebSocket alike.
+    func upstream(path: String, headers: HTTPFields) -> String?
 }
 
 extension ProxyInterceptor {
     public func interceptMessage(path: String, headers: HTTPFields, text: String) async -> InterceptedMessage? { nil }
+    public func upstream(path: String, headers: HTTPFields) -> String? { nil }
 
     /// The Messages API error shape, so Claude Code shows the message instead of a parse error.
     public func upstreamError(_ message: String) -> JSONValue {
@@ -62,16 +65,22 @@ extension ProxyInterceptor {
 }
 
 /// Routes Claude Messages API requests that ask for the sentinel model, and reads the
-/// account's model catalog from `GET /v1/models`.
+/// account's model catalog from `GET /v1/models`. Without an engine (`--no-route`) it only
+/// fixes the tool schemas Claude Code leaves unconverted behind a base URL.
 public struct ClaudeInterceptor: ProxyInterceptor {
-    public let engine: RoutingEngine
+    public let engine: RoutingEngine?
 
-    public init(engine: RoutingEngine) { self.engine = engine }
+    public init(engine: RoutingEngine?) { self.engine = engine }
 
     public func rewriteRequest(method: HTTPRequest.Method, path: String, headers: HTTPFields,
                                body: ByteBuffer) async -> InterceptedRequest {
         guard method == .post, path.hasPrefix("/v1/messages"), var json = try? JSONValue.parse(body.readableBytesView),
               case .object = json else { return InterceptedRequest(body: body) }
+        guard let engine else {
+            let original = json
+            ClaudeAdapter.sanitizeTools(&json)
+            return InterceptedRequest(body: json == original ? body : ByteBuffer(bytes: json.serialized()))
+        }
         let session = HTTPField.Name(ClaudeAdapter.sessionHeader).flatMap { headers[$0] }
         // Token counting must name a real model too, but is not a turn and must not ask Jev.
         let routed = await engine.route(&json, headerSession: session, decide: path == "/v1/messages")
@@ -79,12 +88,12 @@ public struct ClaudeInterceptor: ProxyInterceptor {
     }
 
     public func buffersResponse(method: HTTPRequest.Method, path: String) -> Bool {
-        method == .get && path == "/v1/models"
+        engine != nil && method == .get && path == "/v1/models"
     }
 
     /// The catalog passes through byte for byte.
     public func interceptResponse(method: HTTPRequest.Method, path: String, status: Int, body: ByteBuffer) async -> ByteBuffer? {
-        guard status == 200, let json = try? JSONValue.parse(body.readableBytesView) else { return nil }
+        guard let engine, status == 200, let json = try? JSONValue.parse(body.readableBytesView) else { return nil }
         await engine.observeCatalog(json)
         return nil
     }

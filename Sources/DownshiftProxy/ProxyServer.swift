@@ -20,9 +20,11 @@ public enum ProxyServer {
         /// Empty disables the `/codex` route.
         public var codexUpstream: String
         public var dumpDirectory: String?
-        /// Routes Claude requests that ask for the sentinel model; nil passes them through.
+        /// Routes Claude requests that ask for the sentinel model; nil passes them through
+        /// (still fixing their tool schemas).
         public var claudeEngine: RoutingEngine?
-        /// Routes Codex requests that ask for the sentinel model; nil passes them through.
+        /// Routes Codex requests that ask for the sentinel model; nil passes them through
+        /// (still sending API-key requests to the API).
         public var codexEngine: RoutingEngine?
         /// How long in-flight streams may keep running after a shutdown signal before they
         /// are cancelled (plan §5b).
@@ -42,10 +44,10 @@ public enum ProxyServer {
 
         public var routes: [PassthroughResponder.Route] {
             var routes = [PassthroughResponder.Route(prefix: "", upstream: upstream,
-                                                     interceptor: claudeEngine.map(ClaudeInterceptor.init))]
-            if !codexUpstream.isEmpty { 
+                                                     interceptor: ClaudeInterceptor(engine: claudeEngine))]
+            if !codexUpstream.isEmpty {
                 routes.append(.init(prefix: ProxyServer.codexPrefix, upstream: codexUpstream,
-                                    interceptor: codexEngine.map { CodexInterceptor(engine: $0) }))
+                                    interceptor: CodexInterceptor(engine: codexEngine)))
             }
             return routes
         }

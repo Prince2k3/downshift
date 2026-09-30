@@ -54,7 +54,7 @@ public enum Policy {
         }
     }
 
-    // `\b(?:use|switch to|with|on)\s+(?:haiku|fast|luna)\b`, case-insensitive, with the
+    // `\b(?:use|switch to|with|on)\s+(?:haiku|luna)\b`, case-insensitive, with the
     // simple (ASCII-style) word boundaries JavaScript uses.
     nonisolated(unsafe) private static let overridePatterns: [Regex<Substring>] = Tier.allCases.map { tier in
         let words = tier.overrideWords.joined(separator: "|")

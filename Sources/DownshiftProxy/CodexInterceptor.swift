@@ -5,13 +5,14 @@ import NIOCore
 
 /// Routes Codex Responses API requests that ask for the sentinel model, adds the sentinel to
 /// the model picker, and shows each decision in the transcript as a commentary message.
-/// Paths are relative to the `/codex` route.
+/// Paths are relative to the `/codex` route. Without an engine (`--no-route`) it only sends
+/// API-key requests to the API instead of ChatGPT.
 public struct CodexInterceptor: ProxyInterceptor {
-    public let engine: RoutingEngine
+    public let engine: RoutingEngine?
     /// Where API-key requests go; the route's upstream serves ChatGPT sign-in.
     public let apiUpstream: String
 
-    public init(engine: RoutingEngine, apiUpstream: String = CodexAdapter.apiUpstream) {
+    public init(engine: RoutingEngine?, apiUpstream: String = CodexAdapter.apiUpstream) {
         self.engine = engine
         self.apiUpstream = apiUpstream
     }
@@ -19,10 +20,15 @@ public struct CodexInterceptor: ProxyInterceptor {
     static let sessionHeader = HTTPField.Name(CodexAdapter.sessionHeader)!
     static let accountHeader = HTTPField.Name(CodexAdapter.accountHeader)!
 
+    /// A ChatGPT sign-in sends its account header; an API key must not go to chatgpt.com.
+    public func upstream(path: String, headers: HTTPFields) -> String? {
+        CodexAdapter.usesChatGPT(path: path, accountHeader: headers[Self.accountHeader]) ? nil : apiUpstream
+    }
+
     public func rewriteRequest(method: HTTPRequest.Method, path: String, headers: HTTPFields,
                                body: ByteBuffer) async -> InterceptedRequest {
-        let upstream = CodexAdapter.usesChatGPT(path: path, accountHeader: headers[Self.accountHeader]) ? nil : apiUpstream
-        guard method == .post, path.hasSuffix("/responses"), var json = try? JSONValue.parse(body.readableBytesView),
+        let upstream = upstream(path: path, headers: headers)
+        guard let engine, method == .post, path.hasSuffix("/responses"), var json = try? JSONValue.parse(body.readableBytesView),
               case .object = json else { return InterceptedRequest(body: body, upstream: upstream) }
         let (outcome, usage) = await engine.route(&json, headerSession: headers[Self.sessionHeader])
         return InterceptedRequest(body: ByteBuffer(bytes: json.serialized()), upstream: upstream,
@@ -31,12 +37,12 @@ public struct CodexInterceptor: ProxyInterceptor {
     }
 
     public func buffersResponse(method: HTTPRequest.Method, path: String) -> Bool {
-        method == .get && path.hasSuffix("/models")
+        engine != nil && method == .get && path.hasSuffix("/models")
     }
 
     /// Records the catalog, and returns it with the downshift row added.
     public func interceptResponse(method: HTTPRequest.Method, path: String, status: Int, body: ByteBuffer) async -> ByteBuffer? {
-        guard status == 200, let json = try? JSONValue.parse(body.readableBytesView) else { return nil }
+        guard let engine, status == 200, let json = try? JSONValue.parse(body.readableBytesView) else { return nil }
         await engine.observeCatalog(json)
         let adapter = engine.adapter as? CodexAdapter ?? CodexAdapter()
         return adapter.addingJevModel(json).map { ByteBuffer(bytes: $0.serialized()) }
@@ -46,7 +52,7 @@ public struct CodexInterceptor: ProxyInterceptor {
     /// `type`, so it is routed the same way, and the decision follows the upstream's first
     /// event as plain event messages. A manual one is sent unchanged, but still metered.
     public func interceptMessage(path: String, headers: HTTPFields, text: String) async -> InterceptedMessage? {
-        guard var json = try? JSONValue.parse(text), json["type"]?.stringValue == "response.create" else { return nil }
+        guard let engine, var json = try? JSONValue.parse(text), json["type"]?.stringValue == "response.create" else { return nil }
         let routed = RouterModel.isRouted(json["model"]?.stringValue)
         let (outcome, usage) = await engine.route(&json, headerSession: headers[Self.sessionHeader])
         guard routed else { return InterceptedMessage(text: text, usage: usage) }

@@ -10,14 +10,16 @@ public enum Tier: String, Sendable, CaseIterable, Comparable, Codable {
 
     public static func < (lhs: Tier, rhs: Tier) -> Bool { lhs.rank < rhs.rank }
 
-    /// Words that name this tier in a prompt override ("use opus", "switch to sol").
-    /// The Claude family comes first because it is the tier's display name for Claude users.
+    /// Model names that select this tier in a prompt override ("use opus", "switch to sol").
+    /// Only model names: tier words like "fast" or "long" appear in ordinary requests
+    /// ("use fast-path parsing"). The Claude family comes first because it is the tier's
+    /// display name for Claude users.
     public var overrideWords: [String] {
         switch self {
-        case .fast: ["haiku", "fast", "luna"]
-        case .balanced: ["sonnet", "balanced", "terra"]
-        case .strong: ["opus", "strong", "sol"]
-        case .long: ["fable", "long", "astra"]
+        case .fast: ["haiku", "luna"]
+        case .balanced: ["sonnet", "terra"]
+        case .strong: ["opus", "sol"]
+        case .long: ["fable", "astra"]
         }
     }
 
@@ -38,15 +40,21 @@ public struct ClaudeModel: Sendable, Hashable {
     public var family: String
     public var thinking: Bool
     public var effort: Bool
+    /// Input tokens the family accepts, used until the catalog's `max_input_tokens` is known.
+    public var contextWindow: Int
 
     public static let all: [ClaudeModel] = [
-        ClaudeModel(tier: .fast, id: "claude-haiku-4-5-20251001", family: "haiku", thinking: false, effort: false),
-        ClaudeModel(tier: .balanced, id: "claude-sonnet-5", family: "sonnet", thinking: true, effort: true),
-        ClaudeModel(tier: .strong, id: "claude-opus-5", family: "opus", thinking: true, effort: true),
-        ClaudeModel(tier: .long, id: "claude-fable-5-1", family: "fable", thinking: true, effort: true),
+        ClaudeModel(tier: .fast, id: "claude-haiku-4-5-20251001", family: "haiku", thinking: false, effort: false, contextWindow: 200_000),
+        ClaudeModel(tier: .balanced, id: "claude-sonnet-5", family: "sonnet", thinking: true, effort: true, contextWindow: 1_000_000),
+        ClaudeModel(tier: .strong, id: "claude-opus-5", family: "opus", thinking: true, effort: true, contextWindow: 1_000_000),
+        ClaudeModel(tier: .long, id: "claude-fable-5-1", family: "fable", thinking: true, effort: true, contextWindow: 1_000_000),
     ]
 
     public static func forTier(_ tier: Tier) -> ClaudeModel { all.first { $0.tier == tier }! }
+
+    /// The window Claude Code is told the sentinel has: the largest a routed conversation can
+    /// reach, since the proxy moves a conversation that outgrows its model up to one that fits.
+    public static var routedContextWindow: Int { all.map(\.contextWindow).max()! }
 
     /// The tier of a model id or alias Claude Code sent (`opus`, `sonnet[1m]`,
     /// `claude-opus-4-6`), or nil if it names no known family.

@@ -7,11 +7,14 @@ public struct RoutableModel: Sendable, Hashable {
     public var id: String
     public var tier: Tier
     public var description: String
+    /// Input tokens the model accepts; nil when unknown (never ruled out for size).
+    public var contextWindow: Int?
 
-    public init(id: String, tier: Tier, description: String) {
+    public init(id: String, tier: Tier, description: String, contextWindow: Int? = nil) {
         self.id = id
         self.tier = tier
         self.description = description
+        self.contextWindow = contextWindow
     }
 }
 
@@ -117,9 +120,12 @@ public enum ClaudeAdapter {
                 entry["created_at"]?.stringValue.map { "released \($0.prefix(10))" },
                 entry["max_input_tokens"]?.intValue.map { "\($0) input tokens" },
             ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "; ")
-            return RoutableModel(id: id, tier: tier, description: description)
+            let window = entry["max_input_tokens"]?.intValue ?? ClaudeModel.forTier(tier).contextWindow
+            return RoutableModel(id: id, tier: tier, description: description, contextWindow: window)
         }
-        return models.isEmpty ? ClaudeModel.all.map { RoutableModel(id: $0.id, tier: $0.tier, description: $0.id) } : models
+        return models.isEmpty
+            ? ClaudeModel.all.map { RoutableModel(id: $0.id, tier: $0.tier, description: $0.id, contextWindow: $0.contextWindow) }
+            : models
     }
 
     /// The first catalog model in a tier, else the static id for it.
@@ -139,7 +145,10 @@ public enum ClaudeAdapter {
     /// the main conversation. Only stable fields are used: the session id and the text of the
     /// first message, which is fixed once a conversation starts (Claude Code moves its
     /// `cache_control` breakpoint between requests, so whole blocks can't be hashed).
-    public static func conversationKey(_ body: JSONValue) -> String {
+    /// `claude -p` leaves the metadata off a session's first request, so the caller passes the
+    /// session it resolved (falling back to the header); otherwise that request and the rest
+    /// of the turn would be keyed as two conversations and could land on different models.
+    public static func conversationKey(_ body: JSONValue, session: String? = nil) -> String {
         let text: String
         switch body["messages"]?[0]?["content"] {
         case .string(let string)?:
@@ -149,7 +158,7 @@ public enum ClaudeAdapter {
         default:
             text = ""
         }
-        let digest = Insecure.SHA1.hash(data: Data("\(sessionOf(body))|\(text)".utf8))
+        let digest = Insecure.SHA1.hash(data: Data("\(session ?? sessionOf(body))|\(text)".utf8))
         return String(digest.map { String(format: "%02x", $0) }.joined().prefix(12))
     }
 

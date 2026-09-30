@@ -188,6 +188,9 @@ struct RoutingQuestionTests {
         (#"{"model":"m","answers":{},"usage":{"input_tokens":1.5,"output_tokens":1}}"#, "type"),
         (#"{"model":"m","answers":{},"usage":{"input_tokens":-1,"output_tokens":1}}"#, "minimum"),
         (#"{"model":"m","answers":{},"usage":{"input_tokens":1,"output_tokens":9007199254740992}}"#, "maximum"),
+        // Past Decimal's range (about 1e165), which once made the bound check pass.
+        (#"{"model":"m","answers":{"q":{"type":"noul","noul":1e200}},"usage":{"input_tokens":1,"output_tokens":1}}"#, "maximum"),
+        (#"{"model":"m","answers":{"q":{"type":"noul","noul":-1e300}},"usage":{"input_tokens":1,"output_tokens":1}}"#, "minimum"),
     ])
     func invalid(json: String, keyword: String) throws {
         let found = try violations(json)

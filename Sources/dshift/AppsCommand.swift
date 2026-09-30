@@ -42,6 +42,7 @@ struct AppsCommand: ParsableCommand {
         func run() throws {
             let manager = AppsManager()
             for app in selection.apps {
+                let replaced = app == .claude ? ClaudeSettingsEdit.baseURL(in: try? Data(contentsOf: manager.locations.file(for: app))) : nil
                 switch try manager.enable(app, port: port, codexDefaultProvider: codexDefaultProvider) {
                 case .alreadyEnabled:
                     print("\(app.displayName): already enabled")
@@ -49,6 +50,12 @@ struct AppsCommand: ParsableCommand {
                     print("\(app.displayName): enabled -> \(AppsManager.baseURL(for: app, port: port))")
                     print("  edited  \(manager.locations.file(for: app).path)")
                     if let backup { print("  backup  \(backup.path)") }
+                    if let replaced {
+                        print("""
+                              warning: this replaced ANTHROPIC_BASE_URL=\(replaced). The proxy sends to
+                              api.anthropic.com, not there; `dshift apps disable --claude` puts it back.
+                            """)
+                    }
                 }
             }
             if !ProxyProbe.isListening(port: port) {

@@ -101,6 +101,16 @@ public enum ClaudeLaunch {
         return added + rest
     }
 
+    /// An `ANTHROPIC_BASE_URL` already set for `claude` (a company gateway, a local LiteLLM),
+    /// which the proxy forwards to instead of api.anthropic.com. Nil when unset, not http(s),
+    /// or when this is a session nested in another dshift one (its proxy is already in front).
+    public static func existingUpstream(_ environment: [String: String]) -> String? {
+        guard let value = environment[ClaudeSettingsEdit.baseURLKey]?.trimmingCharacters(in: .whitespaces),
+              let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+              !RouterModel.isRouted(environment["ANTHROPIC_MODEL"]) else { return nil }
+        return value.hasSuffix("/") ? String(value.dropLast()) : value
+    }
+
     /// The child's environment: the proxy, the picker row, and (when routing) the sentinel as
     /// this session's model. `ANTHROPIC_MODEL` applies to this session only and is never saved.
     public static func environment(_ base: [String: String], baseURL: String, route: Bool) -> [String: String] {

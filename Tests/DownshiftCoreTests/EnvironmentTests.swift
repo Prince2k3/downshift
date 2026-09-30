@@ -40,48 +40,61 @@ struct EnvFileTests {
         #expect(env["AFTER"] == "1")
     }
 
+    @Test func anUnclosedQuoteKeepsTheLinesAfterIt() {
+        let env = parsed("""
+            BROKEN="no closing quote
+            DSHIFT_API_KEY=abc
+            DSHIFT_HOST=vercel
+            """)
+        #expect(env["BROKEN"] == "\"no closing quote")
+        #expect(env["DSHIFT_API_KEY"] == "abc")
+        #expect(env["DSHIFT_HOST"] == "vercel")
+    }
+
     @Test func crlfAndDuplicates() {
         #expect(parsed("A=1\r\nA=2\r\nB=x\r\n") == ["A": "2", "B": "x"])
     }
 }
 
 struct DownshiftEnvironmentTests {
-    @Test func precedenceIsProcessThenDotEnvThenHomeFile() throws {
-        let cwd = try temporaryDirectory("cwd")
+    @Test func precedenceIsProcessThenHomeFile() throws {
         let home = try temporaryDirectory("home")
-        try "A=dotenv\nB=dotenv\n".write(to: cwd.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
-        try "B=home\nC=home\n".write(to: home.appendingPathComponent(".downshift.env"), atomically: true, encoding: .utf8)
+        try "A=home\nC=home\n".write(to: home.appendingPathComponent(".downshift.env"), atomically: true, encoding: .utf8)
 
-        let env = DownshiftEnvironment.load(process: ["A": "process"], currentDirectory: cwd, home: home, credentials: nil)
+        let env = DownshiftEnvironment.load(process: ["A": "process"], home: home, credentials: nil)
         #expect(env["A"] == "process")
-        #expect(env["B"] == "dotenv")
         #expect(env["C"] == "home")
-        #expect(env.loadedFiles.map(\.lastPathComponent) == [".env", ".downshift.env"])
+        #expect(env.loadedFiles.map(\.lastPathComponent) == [".downshift.env"])
+    }
+
+    @Test func onlyTheHomeFileIsRead() {
+        // A repo's ./.env could redirect the endpoint (and the key with it) or turn on DSHIFT_DUMP.
+        let home = URL(fileURLWithPath: "/Users/someone")
+        #expect(DownshiftEnvironment.files(home: home).map(\.path) == ["/Users/someone/.downshift.env"])
     }
 
     @Test func keychainValuesSitBetweenProcessAndFiles() throws {
-        let cwd = try temporaryDirectory("cwd")
         let home = try temporaryDirectory("home")
-        try "A=dotenv\nB=dotenv\n".write(to: cwd.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
-        let env = DownshiftEnvironment.load(process: ["P": "process"], currentDirectory: cwd, home: home,
+        try "A=file\nB=file\n".write(to: home.appendingPathComponent(".downshift.env"), atomically: true, encoding: .utf8)
+        let env = DownshiftEnvironment.load(process: ["P": "process"], home: home,
                                       stored: .success(["P": "stored", "A": "stored"]))
         #expect(env["P"] == "process")
         #expect(env["A"] == "stored")
-        #expect(env["B"] == "dotenv")
+        #expect(env["B"] == "file")
         #expect(env.storedKeys == ["A"])
         #expect(env.credentialProblem == nil)
     }
 
     @Test func unreadableKeychainStillLoads() throws {
         struct Locked: Error, CustomStringConvertible { var description: String { "locked" } }
-        let env = DownshiftEnvironment.load(process: ["X": "1"], currentDirectory: try temporaryDirectory("cwd"),
+        let env = DownshiftEnvironment.load(process: ["X": "1"],
                                       home: try temporaryDirectory("home"), stored: .failure(Locked()))
         #expect(env.values == ["X": "1"])
         #expect(env.credentialProblem == "locked")
     }
 
     @Test func missingFilesAreSkipped() throws {
-        let env = DownshiftEnvironment.load(process: ["X": "1"], currentDirectory: try temporaryDirectory("cwd"),
+        let env = DownshiftEnvironment.load(process: ["X": "1"],
                                       home: try temporaryDirectory("home"), credentials: nil)
         #expect(env.values == ["X": "1"])
         #expect(env.loadedFiles.isEmpty)

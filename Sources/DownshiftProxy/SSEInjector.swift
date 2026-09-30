@@ -49,16 +49,8 @@ public struct SSEInjector: Sendable {
         return pending
     }
 
-    /// The length up to and including the first `\n\n`.
-    static func endOfFirstEvent(_ buffer: ByteBuffer) -> Int? {
-        buffer.withUnsafeReadableBytes { bytes -> Int? in
-            guard bytes.count >= 2 else { return nil }
-            for index in 1..<bytes.count where bytes[index] == 0x0A && bytes[index - 1] == 0x0A {
-                return index + 1
-            }
-            return nil
-        }
-    }
+    /// The length up to and including the blank line ending the first event (`\n\n` or `\r\n\r\n`).
+    static func endOfFirstEvent(_ buffer: ByteBuffer) -> Int? { UsageMeter.endOfEvent(buffer) }
 
     /// Whether any line starts with `event:` or `data:`.
     static func isSSE(_ event: ByteBuffer) -> Bool {

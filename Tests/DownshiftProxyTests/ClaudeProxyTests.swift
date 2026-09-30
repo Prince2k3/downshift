@@ -45,7 +45,7 @@ let catalogBody = #"""
 
 /// Runs a fake Anthropic upstream and the Claude proxy in front of it.
 func withClaudeProxy(
-    engine: RoutingEngine,
+    engine: RoutingEngine?,
     _ body: @Sendable (_ proxyPort: Int, _ client: HTTPClient, _ upstream: RecordedUpstream) async throws -> Void
 ) async throws {
     let recorded = RecordedUpstream()
@@ -145,6 +145,23 @@ func turn(_ text: String, session: String? = nil, model: String = "downshift") -
         }
     }
 
+    /// `claude -p` sends the session only in the header on its first request and in the
+    /// metadata after that; both must be one conversation, or the turn switches models.
+    @Test func headerAndMetadataSessionsAreOneConversation() async throws {
+        let spy = RouterSpy(RouteAnswer(choice: "claude-opus-5", confidence: 0.95))
+        let engine = RoutingEngine(baseline: .balanced, available: Tier.allCases, router: spy.router, store: nil)
+        try await withClaudeProxy(engine: engine) { port, client, upstream in
+            let header = [(ClaudeAdapter.sessionHeader, "p1")]
+            _ = try await post(client, port: port, turn("refactor the scheduler"), headers: header)
+            #expect(await upstream.last("/v1/messages")?["model"]?.stringValue == "claude-opus-5")
+
+            let followUp = #"{"model":"downshift","tools":[{"name":"t","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":"refactor the scheduler"},{"role":"assistant","content":[{"type":"tool_use","id":"x","name":"t","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"ok"}]}],"metadata":{"user_id":"{\"session_id\":\"p1\"}"}}"#
+            _ = try await post(client, port: port, followUp, headers: header)
+            #expect(await upstream.last("/v1/messages")?["model"]?.stringValue == "claude-opus-5")
+            #expect(await engine.conversationCount == 1)
+        }
+    }
+
     @Test func aManualModelPassesThroughAndOnlyAgentTurnsFlipToManual() async throws {
         let spy = RouterSpy(nil)
         let dir = try temporaryDirectory()
@@ -176,6 +193,42 @@ func turn(_ text: String, session: String? = nil, model: String = "downshift") -
             #expect(second["thinking"] == nil)
             #expect(await engine.conversationCount == 1)
         }
+    }
+
+    /// `--no-route`: nothing is routed, but MCP tool schemas are still fixed or the API rejects them.
+    @Test func withoutRoutingToolSchemasAreStillSanitized() async throws {
+        try await withClaudeProxy(engine: nil) { port, client, upstream in
+            let json = #"{"model":"claude-sonnet-5","max_tokens":10,"tools":[{"name":"t","input_schema":{"type":"object","properties":{"n":{"minimum":0,"exclusiveMinimum":true}}}}],"messages":[{"role":"user","content":"hi"}]}"#
+            _ = try await post(client, port: port, json)
+            let sent = await upstream.last("/v1/messages")
+            let property = sent?["tools"]?[0]?["input_schema"]?["properties"]?["n"]
+            #expect(property == ["exclusiveMinimum": 0])
+            #expect(sent?["model"]?.stringValue == "claude-sonnet-5")
+
+            _ = try await post(client, port: port, turn("hello"))
+            #expect(await upstream.last("/v1/messages")?["model"]?.stringValue == "downshift")
+        }
+    }
+
+    /// A web page can POST `text/plain` to 127.0.0.1 without a preflight, or DNS-rebind a name to it.
+    @Test func webPagesCannotUseTheProxy() async throws {
+        try await withClaudeProxy(engine: nil) { port, client, upstream in
+            let fromPage = try await post(client, port: port, turn("hi"), headers: [("origin", "https://evil.example")])
+            #expect(fromPage.status == .forbidden)
+            let sandboxed = try await post(client, port: port, turn("hi"), headers: [("origin", "null")])
+            #expect(sandboxed.status == .forbidden)
+            let rebound = try await post(client, port: port, turn("hi"), headers: [("host", "evil.example:\(port)")])
+            #expect(rebound.status == .forbidden)
+            #expect(await upstream.last("/v1/messages") == nil)
+
+            #expect(try await post(client, port: port, turn("hi")).status == .ok)
+        }
+        #expect(LocalOnly.isLoopback(authority: "127.0.0.1:47821"))
+        #expect(LocalOnly.isLoopback(authority: "localhost"))
+        #expect(LocalOnly.isLoopback(authority: "[::1]:47821"))
+        #expect(LocalOnly.isLoopback(authority: "app.localhost:1"))
+        #expect(!LocalOnly.isLoopback(authority: "127.0.0.1.evil.example"))
+        #expect(!LocalOnly.isLoopback(authority: "localhost.evil.example:80"))
     }
 
     @Test func countTokensIsRewrittenWithoutAskingJev() async throws {

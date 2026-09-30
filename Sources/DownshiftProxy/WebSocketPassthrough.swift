@@ -41,11 +41,20 @@ public struct WebSocketPassthrough: Sendable {
     }
 
     public func shouldUpgrade(_ head: HTTPRequest) async -> ShouldUpgradeResult<Handler> {
+        if let refusal = LocalOnly.refusal(authority: head.authority, headers: head.headerFields) {
+            logger.warning("refused a websocket", metadata: ["reason": "\(refusal)"])
+            return .dontUpgrade
+        }
         guard let path = head.path,
               let match = routes.lazy.compactMap({ route -> (PassthroughResponder.Route, String)? in
                   route.remainder(of: path).map { (route, $0) }
-              }).first,
-              let url = Self.webSocketURL(for: match.0.upstream + match.1) else { return .dontUpgrade }
+              }).first else { return .dontUpgrade }
+        let rest = match.1
+        let routePath = rest.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? rest
+        // The same upstream choice as HTTP: a Codex API key goes to the API, not ChatGPT.
+        let base = match.0.interceptor?.upstream(path: routePath, headers: head.headerFields)
+            .map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 } ?? match.0.upstream
+        guard let url = Self.webSocketURL(for: base + rest) else { return .dontUpgrade }
 
         var headers = HTTPFields()
         for field in head.headerFields {
@@ -58,8 +67,6 @@ public struct WebSocketPassthrough: Sendable {
         let upstream = UpstreamSocket()
         let logger = logger
         let requestPath = head.path.map { $0.split(separator: "?", maxSplits: 1).first.map(String.init) ?? $0 } ?? ""
-        let rest = match.1
-        let routePath = rest.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? rest
         let headerFields = head.headerFields
         let rewrite: MessageRewrite? = match.0.interceptor.map { interceptor -> MessageRewrite in
             { text in await interceptor.interceptMessage(path: routePath, headers: headerFields, text: text) }
